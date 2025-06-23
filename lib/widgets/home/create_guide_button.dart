@@ -17,7 +17,7 @@ class CreateGuideButton extends StatelessWidget {
     return OpenContainer(
       transitionType: ContainerTransitionType.fadeThrough,
       transitionDuration: const Duration(milliseconds: 500),
-      closedElevation: 0,
+      closedElevation: 8,
       openElevation: 0,
       closedShape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(32),
@@ -40,9 +40,16 @@ class CreateGuideButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(32),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.blue.withOpacity(0.08),
-                  blurRadius: 16,
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                  spreadRadius: 1,
+                ),
+                BoxShadow(
+                  color: Colors.blue.withOpacity(0.2),
+                  blurRadius: 12,
                   offset: const Offset(0, 4),
+                  spreadRadius: 0,
                 ),
               ],
               border: Border.all(
@@ -52,13 +59,13 @@ class CreateGuideButton extends StatelessWidget {
               ),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.max,
               children: const [
-                Icon(Icons.map, color: Color(0xFF2563EB), size: 22),
+                Icon(Icons.flight_takeoff, color: Color(0xFF2563EB), size: 22),
                 SizedBox(width: 12),
                 Text(
-                  'Me voy de viaje, quiero mi guía',
+                  'Comenzar mi viaje',
                   style: TextStyle(
                     color: Color(0xFF9CA3AF),
                     fontSize: 16,

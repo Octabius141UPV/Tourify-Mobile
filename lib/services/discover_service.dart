@@ -272,6 +272,8 @@ class DiscoverService {
     required int travelers,
     required List<String> travelModes,
     bool isPublic = false,
+    String? guideName,
+    String? guideDescription,
   }) async {
     try {
       if (!AuthService.isAuthenticated) {
@@ -288,6 +290,8 @@ class DiscoverService {
         travelers: travelers,
         travelModes: travelModes,
         isPublic: isPublic,
+        guideName: guideName,
+        guideDescription: guideDescription,
       );
 
       return guideId;

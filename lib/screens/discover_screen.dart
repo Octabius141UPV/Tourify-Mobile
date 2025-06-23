@@ -13,6 +13,8 @@ class DiscoverScreen extends StatefulWidget {
   final DateTime? endDate;
   final int travelers;
   final List<String>? travelModes;
+  final String? guideName;
+  final String? guideDescription;
 
   const DiscoverScreen({
     super.key,
@@ -21,6 +23,8 @@ class DiscoverScreen extends StatefulWidget {
     this.endDate,
     this.travelers = 1,
     this.travelModes,
+    this.guideName,
+    this.guideDescription,
   });
 
   @override
@@ -157,6 +161,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         travelers: widget.travelers,
         travelModes: widget.travelModes ?? ['cultura', 'fiesta'],
         isPublic: false, // Siempre crear como borrador
+        guideName: widget.guideName,
+        guideDescription: widget.guideDescription,
       );
 
       if (guideId != null) {
@@ -196,6 +202,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         travelers: widget.travelers,
         travelModes: widget.travelModes ?? ['cultura', 'fiesta'],
         isPublic: false, // Siempre crear como borrador
+        guideName: widget.guideName,
+        guideDescription: widget.guideDescription,
       );
 
       if (guideId != null) {

@@ -14,12 +14,10 @@ class MyGuidesScreen extends StatefulWidget {
 
 class _MyGuidesScreenState extends State<MyGuidesScreen>
     with TickerProviderStateMixin {
-  final TextEditingController _searchController = TextEditingController();
   bool _isLoading = true;
   bool _isLoadingShared = false;
   List<Map<String, dynamic>> _myGuides = [];
   List<Map<String, dynamic>> _sharedGuides = [];
-  String _searchQuery = '';
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   int _selectedTabIndex = 0;
@@ -29,12 +27,6 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
     super.initState();
     _testFirebaseConnection(); // Probar conexión primero
     _fetchGuides();
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   Future<void> _fetchGuides() async {
@@ -94,6 +86,7 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
           'endDate': data['endDate'],
           'name': data['name'] ?? 'Sin nombre',
           'isShared': false,
+          'isPublic': data['isPublic'] ?? false,
         };
       }).toList();
 
@@ -161,6 +154,7 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
             'endDate': guideData['endDate'],
             'name': guideData['name'] ?? 'Sin nombre',
             'isShared': true,
+            'isPublic': guideData['isPublic'] ?? false,
             'role': role,
             'sharedBy': sharedBy,
             'sharedAt': sharedAt,
@@ -207,6 +201,7 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
               'endDate': guideData['endDate'],
               'name': guideData['name'] ?? 'Sin nombre',
               'isShared': true,
+              'isPublic': guideData['isPublic'] ?? false,
               'role': myCollaboration['role'] ?? 'viewer',
               'sharedBy': 'Directo', // Indicar que se encontró directamente
               'sharedAt': null,
@@ -229,10 +224,6 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
         _isLoadingShared = false;
       });
     }
-  }
-
-  void _filterGuides(String value) {
-    setState(() => _searchQuery = value);
   }
 
   Future<void> _refreshGuides() async {
@@ -289,22 +280,6 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
         backgroundColor: Colors.white,
         body: Stack(
           children: [
-            // Fondo degradado azul para la cabecera
-            Container(
-              width: double.infinity,
-              height: 160,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF60A5FA), Color(0xFF2563EB)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(32),
-                  bottomRight: Radius.circular(32),
-                ),
-              ),
-            ),
             SafeArea(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -316,55 +291,25 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: const [
                         Text(
-                          '🗂️ Tus viajes',
+                          'Mis Viajes',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
+                            color: Color(0xFF1F2937),
+                            fontSize: 28,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        SizedBox(height: 6),
+                        SizedBox(height: 8),
                         Text(
-                          'Gestiona y consulta tus guías de viaje',
+                          'Gestiona tus guías de viaje',
                           style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 15,
+                            color: Color(0xFF6B7280),
+                            fontSize: 16,
                           ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 22),
-                  // Barra de búsqueda
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.blue.withOpacity(0.08),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: const InputDecoration(
-                          hintText: 'Buscar guías...',
-                          hintStyle: TextStyle(color: Color(0xFF9CA3AF)),
-                          prefixIcon:
-                              Icon(Icons.search, color: Color(0xFF2563EB)),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onChanged: _filterGuides,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
                   // Tabs personalizados tipo segmented control
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -400,7 +345,7 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.folder_outlined,
+                                    Icon(Icons.map_outlined,
                                         size: 18,
                                         color: _selectedTabIndex == 0
                                             ? Colors.white
@@ -503,18 +448,7 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
       return const Center(child: CircularProgressIndicator());
     }
 
-    final filteredGuides = guides.where((guide) {
-      return guide['city']
-              .toString()
-              .toLowerCase()
-              .contains(_searchQuery.toLowerCase()) ||
-          guide['title']
-              .toString()
-              .toLowerCase()
-              .contains(_searchQuery.toLowerCase());
-    }).toList();
-
-    if (filteredGuides.isEmpty) {
+    if (guides.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -569,9 +503,9 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
       onRefresh: _refreshGuides,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: filteredGuides.length,
+        itemCount: guides.length,
         itemBuilder: (context, index) {
-          final guide = filteredGuides[index];
+          final guide = guides[index];
           return _buildGuideCard(guide);
         },
         physics: const AlwaysScrollableScrollPhysics(),
@@ -606,9 +540,15 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: isPublic
+              ? Border.all(
+                  color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5)
+              : null,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
+              color: isPublic
+                  ? const Color(0xFF10B981).withOpacity(0.15)
+                  : Colors.black.withOpacity(0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -633,20 +573,62 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Fila superior: título a la izquierda, botón publicar a la derecha
+                  // Fila superior: título a la izquierda, botones a la derecha
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
-                        child: Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            // Botón de editar nombre (solo si es propietario o editor)
+                            if (!isShared ||
+                                role == 'editor' ||
+                                guide['role'] == null ||
+                                guide['role'] == 'owner')
+                              IconButton(
+                                icon: const Icon(Icons.edit, size: 20),
+                                color: Colors.grey[600],
+                                onPressed: () => _editGuideName(guide),
+                                padding: const EdgeInsets.all(8),
+                                constraints: const BoxConstraints(
+                                  minWidth: 36,
+                                  minHeight: 36,
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      if (!isPublic &&
+                      // Mostrar botón de "Hacer privada" o botón de "Publicar"
+                      if (isPublic &&
+                          (guide['role'] == null || guide['role'] == 'owner'))
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            minimumSize: const Size(0, 32),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            textStyle: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600),
+                            elevation: 2,
+                          ),
+                          icon: const Icon(Icons.lock_outline, size: 16),
+                          label: const Text('Hacer privada'),
+                          onPressed: () => _confirmarHacerPrivada(guide),
+                        )
+                      else if (!isPublic &&
                           (guide['role'] == null || guide['role'] == 'owner'))
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
@@ -741,6 +723,109 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
     );
   }
 
+  void _editGuideName(Map<String, dynamic> guide) {
+    showDialog(
+      context: context,
+      builder: (context) => _EditGuideDialog(
+        guide: guide,
+        onUpdate: _updateGuideInfo,
+      ),
+    );
+  }
+
+  Future<void> _updateGuideInfo(
+    Map<String, dynamic> guide,
+    String newName,
+    String newDescription,
+  ) async {
+    try {
+      final guideId = guide['id'].toString();
+      final updateData = {
+        'name': newName,
+        'title': newName, // Actualizar también title para compatibilidad
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // Solo añadir descripción si no está vacía
+      if (newDescription.isNotEmpty) {
+        updateData['description'] = newDescription;
+      } else {
+        updateData['description'] = FieldValue.delete();
+      }
+
+      await _firestore.collection('guides').doc(guideId).update(updateData);
+
+      // Actualizar la lista local
+      setState(() {
+        _myGuides = _myGuides.map((g) {
+          if (g['id'] == guideId) {
+            return {
+              ...g,
+              'name': newName,
+              'title': newName,
+              'description': newDescription.isNotEmpty ? newDescription : null,
+            };
+          }
+          return g;
+        }).toList();
+
+        _sharedGuides = _sharedGuides.map((g) {
+          if (g['id'] == guideId) {
+            return {
+              ...g,
+              'name': newName,
+              'title': newName,
+              'description': newDescription.isNotEmpty ? newDescription : null,
+            };
+          }
+          return g;
+        }).toList();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Guía actualizada correctamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al actualizar la guía: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _confirmarHacerPrivada(Map<String, dynamic> guide) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('¿Hacer privada?'),
+        content: Text(
+            '¿Seguro que quieres hacer privada "${guide['title']}"? Ya no será visible para otros usuarios.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _hacerPrivada(guide);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Hacer privada'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmarPublicarGuia(Map<String, dynamic> guide) {
     showDialog(
       context: context,
@@ -767,6 +852,37 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
         ],
       ),
     );
+  }
+
+  Future<void> _hacerPrivada(Map<String, dynamic> guide) async {
+    try {
+      final guideId = guide['id'].toString();
+      await _firestore
+          .collection('guides')
+          .doc(guideId)
+          .update({'isPublic': false});
+      setState(() {
+        _myGuides = _myGuides.map((g) {
+          if (g['id'] == guideId) {
+            return {...g, 'isPublic': false};
+          }
+          return g;
+        }).toList();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Guía ahora es privada'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al hacer privada la guía: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _publicarGuia(Map<String, dynamic> guide) async {
@@ -797,6 +913,163 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+}
+
+class _EditGuideDialog extends StatefulWidget {
+  final Map<String, dynamic> guide;
+  final Future<void> Function(Map<String, dynamic>, String, String) onUpdate;
+
+  const _EditGuideDialog({
+    required this.guide,
+    required this.onUpdate,
+  });
+
+  @override
+  State<_EditGuideDialog> createState() => _EditGuideDialogState();
+}
+
+class _EditGuideDialogState extends State<_EditGuideDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(
+      text: widget.guide['name'] ?? widget.guide['title'] ?? '',
+    );
+    _descriptionController = TextEditingController(
+      text: widget.guide['description'] ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Editar guía'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Nombre de la guía',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                hintText: 'Nombre de tu guía',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
+              ),
+              maxLength: 100,
+              enabled: !_isLoading,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Descripción (opcional)',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _descriptionController,
+              decoration: InputDecoration(
+                hintText: 'Describe tu viaje...',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 16,
+                ),
+              ),
+              maxLines: 3,
+              maxLength: 300,
+              enabled: !_isLoading,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _handleSave,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2196F3),
+            foregroundColor: Colors.white,
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Guardar'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleSave() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('El nombre no puede estar vacío'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await widget.onUpdate(
+        widget.guide,
+        _nameController.text.trim(),
+        _descriptionController.text.trim(),
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 }

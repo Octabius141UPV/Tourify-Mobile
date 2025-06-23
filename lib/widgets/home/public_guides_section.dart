@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:tourify_flutter/widgets/home/popular_guide_card.dart';
+import 'package:tourify_flutter/widgets/home/guide_card.dart';
+import 'package:tourify_flutter/services/user_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class PopularGuidesSection extends StatelessWidget {
+class PublicGuidesSection extends StatelessWidget {
   final List<Map<String, dynamic>> guides;
   final bool isLoading;
 
-  const PopularGuidesSection({
+  const PublicGuidesSection({
     super.key,
     required this.guides,
     this.isLoading = false,
@@ -18,7 +19,7 @@ class PopularGuidesSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Guías populares',
+          'Guías públicas',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
@@ -36,7 +37,7 @@ class PopularGuidesSection extends StatelessWidget {
                 ? _buildMinimumHeightContainer(
                     child: const Center(
                       child: Text(
-                        'No hay guías disponibles',
+                        'No hay guías públicas disponibles',
                         style: TextStyle(
                           fontSize: 16,
                           color: Color(0xFF6B7280),
@@ -46,7 +47,7 @@ class PopularGuidesSection extends StatelessWidget {
                   )
                 : Container(
                     constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.4,
+                      maxHeight: MediaQuery.of(context).size.height * 0.5,
                     ),
                     child: GridView.builder(
                       shrinkWrap: true,
@@ -54,7 +55,7 @@ class PopularGuidesSection extends StatelessWidget {
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
-                        childAspectRatio: 1.1,
+                        childAspectRatio: 0.8,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
                       ),
@@ -101,20 +102,45 @@ class PopularGuidesSection extends StatelessWidget {
                           activities = guide['totalActivities'] as int;
                         }
 
-                        return PopularGuideCard(
-                          title: guide['title'] ?? 'Sin título',
-                          duration: duration,
-                          activities: activities,
-                          imageUrl: guide['imageUrl'],
-                          city: guide['city'] ?? guide['destination'],
-                          onTap: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/guide-detail',
-                              arguments: {
-                                'guideId': guide['id'],
-                                'guideTitle': guide['title'],
-                                'isPublic': true,
+                        // Autor dinámico usando userRef o userId
+                        final userId = guide['userId'] ??
+                            (guide['userRef'] is DocumentReference
+                                ? guide['userRef'].id
+                                : null);
+
+                        return FutureBuilder<Map<String, dynamic>?>(
+                          future: userId != null
+                              ? UserService.getUserData(userId)
+                              : Future.value(null),
+                          builder: (context, snapshot) {
+                            String author = 'Autor desconocido';
+                            if (snapshot.connectionState ==
+                                    ConnectionState.done &&
+                                snapshot.data != null) {
+                              author = snapshot.data!['name'] ??
+                                  snapshot.data!['displayName'] ??
+                                  'Autor desconocido';
+                            } else if (guide['author'] != null) {
+                              author = guide['author'];
+                            } else if (guide['authorName'] != null) {
+                              author = guide['authorName'];
+                            }
+                            return GuideCard(
+                              title: guide['title'] ?? 'Sin título',
+                              author: author,
+                              duration: duration,
+                              activities: activities,
+                              views: guide['views'] ?? 0,
+                              onTap: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/guide-detail',
+                                  arguments: {
+                                    'guideId': guide['id'],
+                                    'guideTitle': guide['title'],
+                                    'isPublic': true,
+                                  },
+                                );
                               },
                             );
                           },
@@ -138,8 +164,8 @@ class PopularGuidesSection extends StatelessWidget {
         final crossAxisSpacing = 12.0;
         final itemWidth = (availableWidth - crossAxisSpacing) / 2;
 
-        // Con childAspectRatio: 1.1, la altura de cada item es menor al ancho
-        final itemHeight = itemWidth / 1.1;
+        // Con childAspectRatio: 0.8, la altura de cada item es itemWidth / 0.8
+        final itemHeight = itemWidth / 0.8;
 
         // Para 4 guías necesitamos 2 filas + el espacio entre filas
         final mainAxisSpacing = 12.0;

@@ -58,6 +58,16 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   }
 
   Future<void> _checkEditPermission() async {
+    // Si es una guía predefinida, no permitir edición
+    if (widget.guideId.startsWith('predefined_')) {
+      setState(() {
+        _canEdit = false;
+        _isOwner = false;
+        _userRole = null;
+      });
+      return;
+    }
+
     final user = _auth.currentUser;
     if (user == null) return;
     try {
@@ -267,42 +277,43 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
 
           const SizedBox(height: 16),
 
-          // Botón gestionar colaboradores
-          SizedBox(
-            width: double.infinity,
-            child: GestureDetector(
-              onTap: _openCollaborators,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF2196F3), // Azul claro
-                      Color(0xFF0D47A1), // Azul profundo
+          // Botón gestionar colaboradores - solo mostrar si no es guía predefinida
+          if (!widget.guideId.startsWith('predefined_'))
+            SizedBox(
+              width: double.infinity,
+              child: GestureDetector(
+                onTap: _openCollaborators,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF2196F3), // Azul claro
+                        Color(0xFF0D47A1), // Azul profundo
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.people, color: Colors.white),
+                      SizedBox(width: 8),
+                      Text(
+                        'Gestionar colaboradores',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.people, color: Colors.white),
-                    SizedBox(width: 8),
-                    Text(
-                      'Gestionar colaboradores',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

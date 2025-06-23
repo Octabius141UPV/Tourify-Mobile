@@ -2,8 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:tourify_flutter/widgets/home/create_guide_button.dart';
 import 'package:tourify_flutter/widgets/home/popular_guides_section.dart';
+import 'package:tourify_flutter/widgets/home/public_guides_section.dart';
 import 'package:tourify_flutter/widgets/home/search_section.dart';
-import 'package:tourify_flutter/services/public_guides_service.dart';
+import 'package:tourify_flutter/services/guide_service.dart';
 import 'package:tourify_flutter/services/navigation_service.dart';
 import '../widgets/home/create_guide_modal.dart';
 import '../widgets/common/custom_bottom_navigation_bar.dart';
@@ -15,18 +16,31 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _popularGuides = [];
+  List<Map<String, dynamic>> _publicGuides = [];
   List<Map<String, dynamic>> _searchResults = [];
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   bool _isLoadingPopularGuides = true;
+  bool _isLoadingPublicGuides = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _searchResults = [];
     _loadPopularGuides();
+    _loadPublicGuides();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // Recargar guías cuando la app vuelve al primer plano
+      _refreshData();
+    }
   }
 
   Future<void> _loadPopularGuides() async {
@@ -35,8 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final guides =
-          await PublicGuidesService.getTopRatedPublicGuides(limit: 4);
+      final guides = await GuideService.getTopPublicGuides(limit: 4);
       setState(() {
         _popularGuides = guides;
         _isLoadingPopularGuides = false;
@@ -45,6 +58,25 @@ class _HomeScreenState extends State<HomeScreen> {
       print('Error loading popular guides: $e');
       setState(() {
         _isLoadingPopularGuides = false;
+      });
+    }
+  }
+
+  Future<void> _loadPublicGuides() async {
+    setState(() {
+      _isLoadingPublicGuides = true;
+    });
+
+    try {
+      final guides = await GuideService.getCommunityPublicGuides(limit: 20);
+      setState(() {
+        _publicGuides = guides;
+        _isLoadingPublicGuides = false;
+      });
+    } catch (e) {
+      print('Error loading public guides: $e');
+      setState(() {
+        _isLoadingPublicGuides = false;
       });
     }
   }
@@ -63,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final results = await PublicGuidesService.searchPublicGuides(query);
+      final results = await GuideService.searchPublicGuides(query);
       setState(() {
         _searchResults = results;
       });
@@ -84,8 +116,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _refreshData() async {
+    await Future.wait([
+      _loadPopularGuides(),
+      _loadPublicGuides(),
+    ]);
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
   }
@@ -94,101 +134,73 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      body: Stack(
-        children: [
-          // Fondo degradado azul hasta arriba
-          Container(
-            width: double.infinity,
-            height: 160, // más margen visual arriba y abajo
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF60A5FA), Color(0xFF2563EB)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(32),
-                bottomRight: Radius.circular(32),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 32),
+            // Botón "Me voy de viaje" al principio
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: CreateGuideButton(
+                onTap: _showCreateGuideModal,
               ),
             ),
-          ),
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Cabecera con mensaje de bienvenida (sin fondo)
-                Container(
-                  width: double.infinity,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            const SizedBox(height: 16),
+            // Divisor
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Divider(
+                color: Colors.grey.withOpacity(0.3),
+                thickness: 1,
+                height: 32,
+              ),
+            ),
+            // Contenido scrolleable
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _refreshData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        '👋 ¡Bienvenido a Tourify!',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
+                    children: [
+                      // Sección de guías populares (predefinidas)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: PopularGuidesSection(
+                          guides: _popularGuides,
+                          isLoading: _isLoadingPopularGuides,
                         ),
                       ),
-                      SizedBox(height: 6),
-                      Text(
-                        'Crea y comparte guías de viaje únicas',
-                        style: TextStyle(
-                          color: Colors.white60,
-                          fontSize: 15,
+                      const SizedBox(height: 24),
+                      // Sección de guías públicas (comunidad)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: PublicGuidesSection(
+                          guides: _publicGuides,
+                          isLoading: _isLoadingPublicGuides,
                         ),
                       ),
+                      const SizedBox(height: 100), // Espacio para el navbar
                     ],
                   ),
                 ),
-                // Separador decorativo tipo wave
-                Container(
-                  width: double.infinity,
-                  height: 28,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(32),
-                      topRight: Radius.circular(32),
-                    ),
-                  ),
-                  child: CustomPaint(
-                    painter: _WavePainter(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SearchSection(
-                    searchController: _searchController,
-                    onSearch: _filterGuides,
-                    searchResults: _searchResults,
-                    isSearching: _isSearching,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: PopularGuidesSection(
-                      guides: _popularGuides,
-                      isLoading: _isLoadingPopularGuides,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: CreateGuideButton(
-                    onTap: _showCreateGuideModal,
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
+              ),
             ),
-          ),
-        ],
+            // Sección de búsqueda al final, por encima del navbar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SearchSection(
+                searchController: _searchController,
+                onSearch: _filterGuides,
+                searchResults: _searchResults,
+                isSearching: _isSearching,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
       bottomNavigationBar: CustomBottomNavigationBar(
         currentIndex: 0,
@@ -208,25 +220,4 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-}
-
-// Separador decorativo tipo wave
-class _WavePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFFF5F5F5)
-      ..style = PaintingStyle.fill;
-    final path = Path();
-    path.moveTo(0, 0);
-    path.quadraticBezierTo(size.width * 0.25, 18, size.width * 0.5, 12);
-    path.quadraticBezierTo(size.width * 0.75, 6, size.width, 18);
-    path.lineTo(size.width, size.height);
-    path.lineTo(0, size.height);
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
