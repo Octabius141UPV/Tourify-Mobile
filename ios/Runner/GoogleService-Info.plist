@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>679229335063-1oi55c9mktqe1uk3o70e6mnoe0ovi9a9.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.679229335063-1oi55c9mktqe1uk3o70e6mnoe0ovi9a9</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>679229335063-3andcil3j6293qmhtt4oh5c9ka6guj53.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyDRyHMWgNtEAAoAQ9JdkODuuUTxBOkZbGY</string>
+	<key>GCM_SENDER_ID</key>
+	<string>679229335063</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.mycompany.tourify</string>
+	<key>PROJECT_ID</key>
+	<string>tourify-18a0b</string>
+	<key>STORAGE_BUCKET</key>
+	<string>tourify-18a0b.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:679229335063:ios:1d2a2c9d71494b0bc75e52</string>
+</dict>
+</plist>
