@@ -34,6 +34,14 @@
 				<string>tourify</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>REVERSED_CLIENT_ID</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.679229335063-1oi55c9mktqe1uk3o70e6mnoe0ovi9a9</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
@@ -46,7 +54,7 @@
 		<integer>1</integer>
 	</array>
 	<key>MinimumOSVersion</key>
-	<string>14.0</string>
+	<string>15.0</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_dartobservatory._tcp</string>
