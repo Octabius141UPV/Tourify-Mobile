@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tourify_flutter/data/activity.dart';
 import 'dart:ui' show lerpDouble;
+import 'dart:async';
 
 class OrganizeActivitiesScreen extends StatefulWidget {
   final List<DayActivities> dayActivities;
@@ -24,6 +25,9 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
   Map<int, List<Activity>> _dayActivitiesMap = {};
   int? _draggedDay;
   int? _draggedActivityIndex;
+  final ScrollController _scrollController = ScrollController();
+  Timer? _autoScrollTimer;
+  bool _isAutoScrolling = false;
 
   @override
   void initState() {
@@ -41,6 +45,13 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
     }
   }
 
+  @override
+  void dispose() {
+    _stopAutoScroll();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   void _onDragStarted(int day, int activityIndex) {
     setState(() {
       _draggedDay = day;
@@ -53,6 +64,62 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
       _draggedDay = null;
       _draggedActivityIndex = null;
     });
+    _stopAutoScroll();
+  }
+
+  void _startAutoScroll(double scrollSpeed) {
+    if (_isAutoScrolling) return;
+
+    _isAutoScrolling = true;
+    _autoScrollTimer =
+        Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (!_isAutoScrolling || !_scrollController.hasClients) {
+        timer.cancel();
+        return;
+      }
+
+      final currentOffset = _scrollController.offset;
+      final maxScrollExtent = _scrollController.position.maxScrollExtent;
+      final newOffset =
+          (currentOffset + scrollSpeed).clamp(0.0, maxScrollExtent);
+
+      _scrollController.animateTo(
+        newOffset,
+        duration: const Duration(milliseconds: 50),
+        curve: Curves.linear,
+      );
+    });
+  }
+
+  void _stopAutoScroll() {
+    _isAutoScrolling = false;
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
+  }
+
+  void _handleDragUpdate(DragUpdateDetails details) {
+    final RenderBox renderBox = context.findRenderObject() as RenderBox;
+    final localPosition = renderBox.globalToLocal(details.globalPosition);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final appBarHeight = AppBar().preferredSize.height;
+    final availableHeight =
+        screenHeight - appBarHeight - MediaQuery.of(context).padding.top;
+
+    const edgeThreshold = 100.0; // Zona de auto-scroll en píxeles
+    const scrollSpeed = 8.0; // Velocidad de scroll
+
+    // Auto-scroll hacia arriba
+    if (localPosition.dy < edgeThreshold) {
+      _startAutoScroll(-scrollSpeed);
+    }
+    // Auto-scroll hacia abajo
+    else if (localPosition.dy > availableHeight - edgeThreshold) {
+      _startAutoScroll(scrollSpeed);
+    }
+    // Detener auto-scroll si está en el centro
+    else {
+      _stopAutoScroll();
+    }
   }
 
   void _onActivityDropped(int targetDay, int targetIndex) {
@@ -192,6 +259,7 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
               ),
             )
           : ListView.builder(
+              controller: _scrollController,
               padding: const EdgeInsets.all(16),
               itemCount: _workingDayActivities.length,
               itemBuilder: (context, dayIndex) {
@@ -240,60 +308,69 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
                             );
                           },
                         ),
-                        LongPressDraggable<Activity>(
-                          data: activity,
-                          feedback: Material(
-                            elevation: 4,
-                            borderRadius: BorderRadius.circular(12),
+                        GestureDetector(
+                          onPanUpdate: (details) {
+                            // Solo activar auto-scroll si hay un drag activo
+                            if (_draggedDay != null &&
+                                _draggedActivityIndex != null) {
+                              _handleDragUpdate(details);
+                            }
+                          },
+                          child: LongPressDraggable<Activity>(
+                            data: activity,
+                            feedback: Material(
+                              elevation: 4,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                width: MediaQuery.of(context).size.width - 32,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.blue.shade200,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: _buildActivityContent(activity),
+                              ),
+                            ),
+                            childWhenDragging: Container(
+                              height: 60,
+                              margin: const EdgeInsets.only(bottom: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.grey.shade300,
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            onDragStarted: () =>
+                                _onDragStarted(day.dayNumber, index),
+                            onDragEnd: (_) => _onDragEnded(),
                             child: Container(
-                              width: MediaQuery.of(context).size.width - 32,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
+                              height: 60,
+                              margin: const EdgeInsets.only(bottom: 8),
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: Colors.blue.shade200,
-                                  width: 2,
+                                  color: Colors.grey.shade200,
+                                  width: 1,
                                 ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.05),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
                               child: _buildActivityContent(activity),
                             ),
-                          ),
-                          childWhenDragging: Container(
-                            height: 60,
-                            margin: const EdgeInsets.only(bottom: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.grey.shade300,
-                                width: 1,
-                              ),
-                            ),
-                          ),
-                          onDragStarted: () =>
-                              _onDragStarted(day.dayNumber, index),
-                          onDragEnd: (_) => _onDragEnded(),
-                          child: Container(
-                            height: 60,
-                            margin: const EdgeInsets.only(bottom: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.grey.shade200,
-                                width: 1,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: _buildActivityContent(activity),
                           ),
                         ),
                       ];

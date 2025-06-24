@@ -16,41 +16,28 @@ class EditActivityDialog extends StatefulWidget {
 }
 
 class _EditActivityDialogState extends State<EditActivityDialog> {
-  late TextEditingController _titleController;
-  late TextEditingController _descriptionController;
   late TextEditingController _durationController;
   bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _titleController = TextEditingController(text: widget.activity.title ?? '');
-    _descriptionController =
-        TextEditingController(text: widget.activity.description ?? '');
     _durationController =
         TextEditingController(text: widget.activity.duration.toString());
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
     _durationController.dispose();
     super.dispose();
   }
 
   void _handleSave() async {
-    if (_titleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El título es obligatorio')),
-      );
-      return;
-    }
-
     final duration = int.tryParse(_durationController.text);
     if (duration == null || duration <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La duración debe ser un número válido')),
+        const SnackBar(
+            content: Text('La duración debe ser un número válido mayor a 0')),
       );
       return;
     }
@@ -62,9 +49,10 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
     try {
       final updatedActivity = Activity(
         id: widget.activity.id,
-        title: _titleController.text.trim(),
-        description: _descriptionController.text.trim(),
-        duration: duration,
+        title: widget.activity.title, // Mantener título original
+        description:
+            widget.activity.description, // Mantener descripción original
+        duration: duration, // Solo actualizar duración
         day: widget.activity.day,
         order: widget.activity.order,
         images: widget.activity.images,
@@ -119,7 +107,7 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'Editar actividad',
+                    'Editar duración',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -135,33 +123,50 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
             ),
             const SizedBox(height: 24),
 
-            // Title field
-            TextField(
-              controller: _titleController,
-              enabled: !_isLoading,
-              decoration: const InputDecoration(
-                labelText: 'Título *',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.title),
+            // Información de la actividad (solo lectura)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
               ),
-              maxLines: 1,
-            ),
-            const SizedBox(height: 16),
-
-            // Description field
-            TextField(
-              controller: _descriptionController,
-              enabled: !_isLoading,
-              decoration: const InputDecoration(
-                labelText: 'Descripción',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.description),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on,
+                          size: 18, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.activity.title.isNotEmpty
+                              ? widget.activity.title
+                              : 'Sin título',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (widget.activity.description.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.activity.description,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              maxLines: 3,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
 
-            // Duration field
+            // Duration field (editable)
             TextField(
               controller: _durationController,
               enabled: !_isLoading,
@@ -170,6 +175,7 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
                 labelText: 'Duración (minutos) *',
                 border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.access_time),
+                helperText: 'Solo puedes modificar la duración de la actividad',
               ),
             ),
             const SizedBox(height: 24),

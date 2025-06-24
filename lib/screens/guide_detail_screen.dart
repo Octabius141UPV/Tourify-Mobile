@@ -13,8 +13,10 @@ import '../utils/activity_utils.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
+import 'package:cross_file/cross_file.dart';
 import 'dart:io';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/pdf.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/collaborators_service.dart';
 import '../services/guide_service.dart';
@@ -158,7 +160,13 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         title: Text(guideTitle),
-        actions: [],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            onPressed: _downloadGuide,
+            tooltip: 'Descargar guía',
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -226,7 +234,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Botón de retroceso y título principal
+          // Título principal
           Row(
             children: [
               Expanded(
@@ -597,6 +605,19 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     );
   }
 
+  // Función auxiliar para extraer URL de imagen
+  String? _getImageUrl(Map<String, dynamic> activity) {
+    if (activity['images'] != null &&
+        activity['images'] is List &&
+        (activity['images'] as List).isNotEmpty) {
+      return activity['images'][0] as String;
+    } else if (activity['imageUrl'] != null &&
+        activity['imageUrl'].toString().isNotEmpty) {
+      return activity['imageUrl'] as String;
+    }
+    return null;
+  }
+
   Future<File> generateGuidePdf({
     required String title,
     required String city,
@@ -604,6 +625,25 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     required List<dynamic> dayActivities,
   }) async {
     final pdf = pw.Document();
+
+    // Pre-cargar todas las imágenes antes de crear el PDF
+    final Map<String, pw.MemoryImage> imageCache = {};
+    for (final day in dayActivities) {
+      for (final activity in day['activities']) {
+        final imageUrl = _getImageUrl(activity);
+
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          try {
+            final response = await http.get(Uri.parse(imageUrl));
+            if (response.statusCode == 200) {
+              imageCache[imageUrl] = pw.MemoryImage(response.bodyBytes);
+            }
+          } catch (e) {
+            print('Error al cargar imagen $imageUrl: $e');
+          }
+        }
+      }
+    }
 
     pdf.addPage(
       pw.MultiPage(
@@ -620,30 +660,71 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
           ...dayActivities.map((day) => pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('Día ${day['dayNumber']}',
+                  pw.Text('Día ${day['dayNumber']?.toString() ?? '?'}',
                       style: pw.TextStyle(
                           fontSize: 20, fontWeight: pw.FontWeight.bold)),
                   pw.SizedBox(height: 8),
                   ...day['activities'].map((activity) => pw.Container(
-                        margin: const pw.EdgeInsets.only(bottom: 8),
+                        margin: const pw.EdgeInsets.only(bottom: 16),
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.start,
                           children: [
-                            pw.Text(activity['title'],
+                            // Título de la actividad
+                            pw.Text(
+                                activity['title']?.toString() ??
+                                    activity['name']?.toString() ??
+                                    'Sin título',
                                 style: pw.TextStyle(
                                     fontSize: 16,
                                     fontWeight: pw.FontWeight.bold)),
-                            if (activity['city'] != null &&
-                                activity['city'].isNotEmpty)
-                              pw.Text('Ciudad: ${activity['city']}',
-                                  style: pw.TextStyle(fontSize: 12)),
-                            if (activity['duration'] != null)
-                              pw.Text('Duración: ${activity['duration']} min',
-                                  style: pw.TextStyle(fontSize: 12)),
+                            pw.SizedBox(height: 8),
+
+                            // Información básica en una fila
+                            pw.Row(
+                              children: [
+                                if (activity['city'] != null &&
+                                    activity['city'].toString().isNotEmpty)
+                                  pw.Expanded(
+                                    child: pw.Text('${activity['city']}',
+                                        style: pw.TextStyle(
+                                            fontSize: 12,
+                                            color: PdfColors.grey700)),
+                                  ),
+                                if (activity['duration'] != null)
+                                  pw.Text('${activity['duration']} min',
+                                      style: pw.TextStyle(
+                                          fontSize: 12,
+                                          color: PdfColors.grey700)),
+                              ],
+                            ),
+
                             if (activity['description'] != null &&
-                                activity['description'].isNotEmpty)
-                              pw.Text(activity['description'],
-                                  style: pw.TextStyle(fontSize: 12)),
+                                activity['description']
+                                    .toString()
+                                    .isNotEmpty) ...[
+                              pw.SizedBox(height: 6),
+                              pw.Text(activity['description'].toString(),
+                                  style: pw.TextStyle(
+                                      fontSize: 12, color: PdfColors.grey800)),
+                            ],
+
+                            // Agregar imagen si está disponible en el cache
+                            if ((() {
+                              final imageUrl = _getImageUrl(activity);
+                              return imageUrl != null &&
+                                  imageCache.containsKey(imageUrl);
+                            })())
+                              pw.Center(
+                                child: pw.Container(
+                                  margin: const pw.EdgeInsets.only(top: 8),
+                                  child: pw.Image(
+                                    imageCache[_getImageUrl(activity)!]!,
+                                    width: 200,
+                                    height: 120,
+                                    fit: pw.BoxFit.cover,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       )),
@@ -660,84 +741,75 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     return file;
   }
 
-  void _shareGuide() async {
+  void _downloadGuide() async {
     try {
-      final String guideTitle = widget.guideTitle;
-      final String? city = _guide?['city'] ?? 'Destino desconocido';
-      final String author = _guide?['author'] ?? 'Tourify';
+      if (_guide == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('No se pudo cargar la información de la guía')),
+          );
+        }
+        return;
+      }
+
+      final String guideTitle = widget.guideTitle ?? 'Guía sin título';
+      final String? city = _guide?['city']?.toString() ?? 'Destino desconocido';
+      final String author = _guide?['author']?.toString() ?? 'Tourify';
+      final List<dynamic> days = _guide!['days'] ?? [];
+
       final pdfFile = await generateGuidePdf(
         title: guideTitle,
         city: city ?? 'Destino desconocido',
         author: author,
-        dayActivities: _guide!['days'],
+        dayActivities: days,
       );
 
+      // Usar Share para permitir al usuario elegir dónde guardar
       await Share.shareXFiles(
         [XFile(pdfFile.path)],
-        text: '¡Mira esta guía de viaje creada con Tourify!',
-        subject: 'Guía de viaje: $guideTitle',
-        sharePositionOrigin: _getSharePositionOrigin(),
+        text: 'Guía de viaje: $guideTitle',
+        subject: 'Guía de viaje generada con Tourify',
       );
 
-      await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) _showShareSuccessMessage();
+      if (mounted) _showDownloadSuccessMessage();
     } catch (e) {
-      print('Error al compartir la guía como PDF: $e');
-      await Future.delayed(const Duration(milliseconds: 300));
-      if (mounted) _showShareErrorMessage();
+      print('Error al descargar la guía como PDF: $e');
+      if (mounted) _showDownloadErrorMessage();
     }
   }
 
-  // Obtener la posición de origen para el modal de compartir
-  Rect? _getSharePositionOrigin() {
-    try {
-      // Obtener el contexto del botón de compartir en la AppBar
-      final MediaQueryData mediaQuery = MediaQuery.of(context);
-      final double screenWidth = mediaQuery.size.width;
-      final double statusBarHeight = mediaQuery.padding.top;
-      final double appBarHeight = kToolbarHeight;
-
-      // Posicionar el modal cerca del botón de compartir (esquina superior derecha)
-      return Rect.fromLTWH(
-        screenWidth - 100, // 100px desde el borde derecho
-        statusBarHeight + appBarHeight, // Justo debajo de la AppBar
-        50, // Ancho del área
-        50, // Alto del área
-      );
-    } catch (e) {
-      print('Error obteniendo posición de origen: $e');
-      return null;
-    }
-  }
-
-  // Mostrar mensaje de éxito con posicionamiento mejorado
-  void _showShareSuccessMessage() {
+  // Mostrar mensaje de éxito de descarga
+  void _showDownloadSuccessMessage() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Row(
           children: [
             Icon(Icons.check_circle, color: Colors.white),
             SizedBox(width: 8),
-            Text('¡Guía compartida exitosamente!'),
+            Expanded(
+              child: Text(
+                  '¡Guía preparada para descargar!\nElige dónde guardarla desde el menú de compartir.'),
+            ),
           ],
         ),
         backgroundColor: Colors.green,
-        duration: Duration(seconds: 2),
+        duration: Duration(seconds: 4),
         behavior: SnackBarBehavior.floating,
         margin: EdgeInsets.only(bottom: 100, left: 16, right: 16),
       ),
     );
   }
 
-  // Mostrar mensaje de error con posicionamiento mejorado
-  void _showShareErrorMessage() {
+  // Mostrar mensaje de error de descarga
+  void _showDownloadErrorMessage() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Row(
           children: [
             Icon(Icons.error_outline, color: Colors.white),
             SizedBox(width: 8),
-            Text('Error al compartir la guía'),
+            Text('Error al descargar la guía'),
           ],
         ),
         backgroundColor: Colors.red,
@@ -1299,26 +1371,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                           ),
                           shadowColor: Colors.blue,
                           icon: Icons.add,
-                          iconSize: 24,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // Botón Compartir
-                      Tooltip(
-                        message: 'Compartir guía',
-                        child: _buildCircularButton(
-                          onTap: _shareGuide,
-                          size: 56,
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF42A5F5), // Azul claro
-                              Color(0xFF1565C0), // Azul oscuro
-                            ],
-                          ),
-                          shadowColor: Colors.blue,
-                          icon: Icons.share,
                           iconSize: 24,
                         ),
                       ),

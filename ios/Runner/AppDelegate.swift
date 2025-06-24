@@ -13,9 +13,7 @@ import GoogleSignIn
     if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
        let plist = NSDictionary(contentsOfFile: path),
        let clientId = plist["CLIENT_ID"] as? String {
-        guard let config = GIDConfiguration(clientID: clientId) else {
-            fatalError("Failed to configure Google Sign-In")
-        }
+        let config = GIDConfiguration(clientID: clientId)
         GIDSignIn.sharedInstance.configuration = config
     }
     

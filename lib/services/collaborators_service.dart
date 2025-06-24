@@ -350,8 +350,9 @@ class CollaboratorsService {
         'isActive': true,
       });
 
-      // Construir el link de acceso
-      final accessLink = 'tourify://guide/$guideId?token=$token';
+      // Construir el link de acceso usando tu API
+      final accessLink =
+          'https://api.tourifyapp.es/collaborators/join/$guideId?token=$token';
 
       return {
         'link': accessLink,
@@ -441,7 +442,8 @@ class CollaboratorsService {
           'role': data['role'],
           'createdAt': data['createdAt'],
           'expiresAt': data['expiresAt'],
-          'link': 'tourify://guide/$guideId?token=${data['token']}',
+          'link':
+              'https://api.tourifyapp.es/collaborators/join/$guideId?token=${data['token']}',
         };
       }).toList();
     } catch (e) {

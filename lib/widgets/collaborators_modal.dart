@@ -77,7 +77,8 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
         final String? link = result['link'] as String?;
         if (link != null) {
           await Clipboard.setData(ClipboardData(text: link));
-          _showMessage('Link generado y copiado al portapapeles');
+          _showMessage(
+              '✅ Link generado y copiado al portapapeles\n\nComparte este link para que otros se unan a tu guía:\n$link');
         } else {
           _showMessage('Link de acceso generado correctamente');
         }
@@ -258,202 +259,219 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
 
   @override
   Widget build(BuildContext context) {
+    final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final maxHeight = screenHeight * 0.9 - keyboardHeight;
+    final minHeight = screenHeight * 0.3;
+
     return Material(
       color: Colors.transparent,
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.50,
-        margin: EdgeInsets.zero,
-        decoration: const BoxDecoration(
-          color: CupertinoColors.systemBackground,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: CupertinoColors.systemBackground.resolveFrom(context),
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
-                border: Border(
-                  bottom: BorderSide(
-                    color: CupertinoColors.separator.resolveFrom(context),
-                    width: 0.5,
+      child: SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: maxHeight,
+            minHeight: minHeight,
+          ),
+          margin: EdgeInsets.zero,
+          decoration: const BoxDecoration(
+            color: CupertinoColors.systemBackground,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemBackground.resolveFrom(context),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(16)),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: CupertinoColors.separator.resolveFrom(context),
+                      width: 0.5,
+                    ),
                   ),
                 ),
-              ),
-              child: Row(
-                children: [
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text(
-                      'Cancelar',
-                      style: TextStyle(
-                        color: CupertinoColors.systemBlue,
-                        fontSize: 17,
-                      ),
-                    ),
-                  ),
-                  const Expanded(
-                    child: Text(
-                      'Agregar colaborador',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: _isAddingCollaborator ? null : _addCollaborator,
-                    child: _isAddingCollaborator
-                        ? const CupertinoActivityIndicator()
-                        : const Text(
-                            'Agregar',
-                            style: TextStyle(
-                              color: CupertinoColors.systemBlue,
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-            // Contenido
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    // Campo email
-                    Text(
-                      'Email del colaborador',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: CupertinoColors.label.resolveFrom(context),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text(
+                        'Cancelar',
+                        style: TextStyle(
+                          color: CupertinoColors.systemBlue,
+                          fontSize: 17,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    CupertinoTextField(
-                      controller: _emailController,
-                      placeholder: 'ejemplo@email.com',
-                      keyboardType: TextInputType.emailAddress,
-                      enabled: !_isAddingCollaborator,
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.tertiarySystemBackground
-                            .resolveFrom(context),
-                        borderRadius: BorderRadius.circular(8),
+                    const Expanded(
+                      child: Text(
+                        'Agregar colaborador',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      padding: const EdgeInsets.all(12),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        SizedBox(
-                          height: 48,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed:
+                          _isAddingCollaborator ? null : _addCollaborator,
+                      child: _isAddingCollaborator
+                          ? const CupertinoActivityIndicator()
+                          : const Text(
+                              'Agregar',
+                              style: TextStyle(
+                                color: CupertinoColors.systemBlue,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
                               ),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 22, vertical: 0),
-                              textStyle: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600),
-                              minimumSize: const Size(0, 48),
                             ),
-                            onPressed:
-                                _isGeneratingLink ? null : _generateAccessLink,
-                            child: _isGeneratingLink
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.white),
-                                  )
-                                : const Text('Generar link'),
-                          ),
-                        ),
-                        const SizedBox(width: 20),
-                        Container(
-                          height: 48,
-                          padding: const EdgeInsets.symmetric(horizontal: 18),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: _selectedRole,
-                              isDense: true,
-                              style: const TextStyle(
-                                  fontSize: 16, color: Colors.black),
-                              alignment: Alignment.center,
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'viewer',
-                                  child: Text('Acoplado'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'editor',
-                                  child: Text('Organizador'),
-                                ),
-                              ],
-                              onChanged: _isGeneratingLink
-                                  ? null
-                                  : (value) {
-                                      if (value != null) {
-                                        setState(() => _selectedRole = value);
-                                      }
-                                    },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Selección de rol
-                    Text(
-                      'Tipo de acceso',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: CupertinoColors.label.resolveFrom(context),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    _buildRoleOption(
-                      'viewer',
-                      'Acoplado',
-                      'Solo puede ver la guía',
-                      CupertinoIcons.eye,
-                      CupertinoColors.systemGreen,
-                    ),
-                    const SizedBox(height: 8),
-                    _buildRoleOption(
-                      'editor',
-                      'Editor',
-                      'Puede editar la guía',
-                      CupertinoIcons.pencil,
-                      CupertinoColors.systemBlue,
                     ),
                   ],
                 ),
               ),
-            ),
-          ],
+              // Contenido
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Campo email
+                      Text(
+                        'Email del colaborador',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: CupertinoColors.label.resolveFrom(context),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      CupertinoTextField(
+                        controller: _emailController,
+                        placeholder: 'ejemplo@email.com',
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.done,
+                        enabled: !_isAddingCollaborator,
+                        autofocus: false,
+                        onSubmitted: (_) => _addCollaborator(),
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.tertiarySystemBackground
+                              .resolveFrom(context),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.all(12),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            height: 48,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 22, vertical: 0),
+                                textStyle: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w600),
+                                minimumSize: const Size(0, 48),
+                              ),
+                              onPressed: _isGeneratingLink
+                                  ? null
+                                  : _generateAccessLink,
+                              child: _isGeneratingLink
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Text('Generar link'),
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          Container(
+                            height: 48,
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedRole,
+                                isDense: true,
+                                style: const TextStyle(
+                                    fontSize: 16, color: Colors.black),
+                                alignment: Alignment.center,
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'viewer',
+                                    child: Text('Acoplado'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'editor',
+                                    child: Text('Organizador'),
+                                  ),
+                                ],
+                                onChanged: _isGeneratingLink
+                                    ? null
+                                    : (value) {
+                                        if (value != null) {
+                                          setState(() => _selectedRole = value);
+                                        }
+                                      },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Selección de rol
+                      Text(
+                        'Tipo de acceso',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: CupertinoColors.label.resolveFrom(context),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      _buildRoleOption(
+                        'viewer',
+                        'Acoplado',
+                        'Solo puede ver la guía',
+                        CupertinoIcons.eye,
+                        CupertinoColors.systemGreen,
+                      ),
+                      const SizedBox(height: 8),
+                      _buildRoleOption(
+                        'editor',
+                        'Editor',
+                        'Puede editar la guía',
+                        CupertinoIcons.pencil,
+                        CupertinoColors.systemBlue,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -535,9 +553,14 @@ void showCollaboratorsModal(
     BuildContext context, String guideId, String guideTitle) {
   showCupertinoModalPopup<void>(
     context: context,
-    builder: (context) => CollaboratorsModal(
-      guideId: guideId,
-      guideTitle: guideTitle,
+    builder: (context) => Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: CollaboratorsModal(
+        guideId: guideId,
+        guideTitle: guideTitle,
+      ),
     ),
   );
 }

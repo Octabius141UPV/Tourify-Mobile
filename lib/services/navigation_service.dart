@@ -152,4 +152,58 @@ class NavigationService {
       ),
     );
   }
+
+  // Handle join guide deep link
+  static Future<void> handleJoinGuideLink(String guideId, String token) async {
+    final context = NavigationService.context;
+    if (context == null) return;
+
+    try {
+      print('Procesando link de unirse a guía: $guideId con token: $token');
+
+      // Mostrar diálogo de progreso
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Uniéndote a la guía...'),
+            ],
+          ),
+        ),
+      );
+
+      final collaboratorsService = CollaboratorsService();
+      final result =
+          await collaboratorsService.verifyAccessLink(guideId, token);
+
+      // Cerrar diálogo de progreso
+      Navigator.of(context).pop();
+
+      if (result) {
+        // Éxito: navegar a la guía y mostrar mensaje
+        showSuccessMessage('¡Te has unido exitosamente a la guía!');
+
+        // Navegar a la guía después de un pequeño retraso
+        await Future.delayed(const Duration(milliseconds: 500));
+        await navigateToGuide(guideId, guideTitle: 'Guía compartida');
+      } else {
+        // Error: mostrar mensaje de error
+        _showErrorDialog(
+            'No se pudo unir a la guía.\n\nEl link puede haber expirado o ya fue utilizado.');
+      }
+    } catch (e) {
+      // Cerrar diálogo de progreso si está abierto
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      print('Error al procesar link de unirse a guía: $e');
+      _showErrorDialog(
+          'Error al procesar el link de invitación.\n\nVerifica tu conexión a internet e inténtalo de nuevo.');
+    }
+  }
 }

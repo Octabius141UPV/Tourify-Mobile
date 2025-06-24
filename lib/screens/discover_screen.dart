@@ -49,8 +49,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
   bool _showFeedback = false;
   bool _isPositiveFeedback = false;
-  String _feedbackText = '';
-  Color _feedbackColor = Colors.green;
   int _currentStreak = 0; // Racha actual de actividades aceptadas
 
   @override
@@ -309,7 +307,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     );
   }
 
-  void _showDuolingoFeedback(bool isPositive, String text) {
+  void _showVisualFeedback(bool isPositive) {
     // Haptic feedback
     if (isPositive) {
       HapticFeedback.lightImpact();
@@ -320,8 +318,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     setState(() {
       _showFeedback = true;
       _isPositiveFeedback = isPositive;
-      _feedbackText = text;
-      _feedbackColor = isPositive ? Colors.green : Colors.orange;
     });
 
     // Animar feedback
@@ -346,18 +342,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     }
   }
 
-  // Mostrar feedback para acción de deshacer
-  void _showUndoFeedback(Activity activity) {
+  // Mostrar feedback visual para acción de deshacer
+  void _showUndoVisualFeedback() {
     setState(() {
       _showFeedback = true;
-      _isPositiveFeedback = false; // Usar el estilo "neutro/amarillo"
-      _feedbackText = '↶ Deshecho: ${activity.name}';
-      _feedbackColor = Colors.amber;
+      _isPositiveFeedback = false; // Usar el estilo "neutro"
     });
 
     // Animar feedback
     _feedbackAnimationController.forward().then((_) {
-      Future.delayed(const Duration(milliseconds: 1200), () {
+      Future.delayed(const Duration(milliseconds: 600), () {
         _feedbackAnimationController.reverse().then((_) {
           setState(() {
             _showFeedback = false;
@@ -971,16 +965,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                             '¡Fantástico!',
                           ];
 
-                          // Mensajes especiales para rachas
-                          String message;
-                          if (_currentStreak >= 5) {
-                            message = '¡Racha de ${_currentStreak}! 🔥';
-                          } else {
-                            message = messages[
-                                DateTime.now().millisecond % messages.length];
-                          }
-
-                          _showDuolingoFeedback(true, message);
+                          // Mostrar feedback visual sin texto
+                          _showVisualFeedback(true);
 
                           // Celebración en hitos
                           if (DiscoverService.acceptedActivities.length % 3 ==
@@ -1004,17 +990,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                             _currentStreak = 0; // Resetear racha
                           });
 
-                          // Mostrar feedback neutral
-                          final messages = [
-                            'No pasa nada',
-                            'Sigamos',
-                            'A la siguiente',
-                            'Ok, continuemos',
-                            'Entendido',
-                          ];
-                          final randomMessage = messages[
-                              DateTime.now().millisecond % messages.length];
-                          _showDuolingoFeedback(false, randomMessage);
+                          // Mostrar feedback visual sin texto
+                          _showVisualFeedback(false);
                         }
                       }
                       return true;
@@ -1442,8 +1419,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                                       }
                                     });
 
-                                    // Mostrar feedback visual
-                                    _showUndoFeedback(undoneActivity);
+                                    // Mostrar feedback visual para undo
+                                    _showUndoVisualFeedback();
 
                                     // Haptic feedback
                                     HapticFeedback.lightImpact();
@@ -1609,66 +1586,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                   ),
                 ),
               ),
-            // Widget de feedback visual estilo Duolingo
-            if (_showFeedback)
-              AnimatedBuilder(
-                animation: _feedbackAnimationController,
-                builder: (context, child) {
-                  // Verificar que las animaciones estén inicializadas
-                  if (!mounted) {
-                    return const SizedBox.shrink();
-                  }
-
-                  return Positioned(
-                    top: MediaQuery.of(context).size.height * 0.3,
-                    left: 0,
-                    right: 0,
-                    child: Center(
-                      child: Transform.scale(
-                        scale: _feedbackScaleAnimation.value,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _feedbackColor,
-                            borderRadius: BorderRadius.circular(30),
-                            boxShadow: [
-                              BoxShadow(
-                                color: _feedbackColor.withOpacity(0.4),
-                                blurRadius: 20,
-                                spreadRadius: 5,
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _isPositiveFeedback
-                                    ? Icons.check_circle
-                                    : Icons.info,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                _feedbackText,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
+            // Widget de feedback visual eliminado
             // Widget de celebración de progreso
             AnimatedBuilder(
               animation: _celebrationController,

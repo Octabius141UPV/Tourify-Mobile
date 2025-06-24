@@ -79,12 +79,26 @@ class _MyAppState extends State<MyApp> {
 
     try {
       final uri = Uri.parse(link);
-      if (uri.scheme == 'tourify' && uri.host == 'guide') {
-        final guideId = uri.pathSegments.last;
-        final token = uri.queryParameters['token'];
+      print('Deep link recibido: $link');
 
-        // Navegar a la guía con el token de acceso
-        NavigationService.navigateToGuide(guideId, accessToken: token);
+      if (uri.scheme == 'tourify') {
+        if (uri.host == 'guide') {
+          // Link para ver guía: tourify://guide/{guideId}?token={token}
+          final guideId = uri.pathSegments.last;
+          final token = uri.queryParameters['token'];
+          NavigationService.navigateToGuide(guideId, accessToken: token);
+        } else if (uri.host == 'join-guide') {
+          // Link para unirse a guía: tourify://join-guide/{guideId}?token={token}
+          final guideId =
+              uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
+          final token = uri.queryParameters['token'];
+
+          if (guideId.isNotEmpty && token != null) {
+            NavigationService.handleJoinGuideLink(guideId, token);
+          } else {
+            print('Error: guideId o token faltante en el deep link');
+          }
+        }
       }
     } catch (e) {
       print('Error al procesar link: $e');
