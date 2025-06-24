@@ -4,9 +4,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:tourify_flutter/config/api_config.dart';
 
 class CollaboratorsService {
-  static String baseUrl = dotenv.env['API_URL'] ?? 'http://localhost:3000';
+  // Usar ApiConfig en lugar de configuración local
+  static String get baseUrl => ApiConfig.baseUrl;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final _uuid = const Uuid();

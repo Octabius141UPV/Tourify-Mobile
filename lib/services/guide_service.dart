@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tourify_flutter/data/mock_activities.dart';
 import 'package:tourify_flutter/services/auth_service.dart';
+import 'package:tourify_flutter/services/image_service.dart';
 
 class GuideService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -459,6 +460,25 @@ class GuideService {
     }
   }
 
+  // Helper function para obtener imagen de actividad desde ImageService
+  static String _getActivityImageFromService(
+      String activityTitle, String city) {
+    // Normalizar el título y ciudad para buscar en ImageService
+    final normalizedCity = city.toLowerCase();
+    final normalizedTitle = activityTitle.toLowerCase();
+
+    // Buscar en el mapeo de actividades específicas del ImageService
+    final activityKey = '${normalizedCity}_$normalizedTitle';
+    final images = ImageService.popularGuidesImages;
+
+    if (images.containsKey(activityKey)) {
+      return images[activityKey]!;
+    }
+
+    // Si no se encuentra, usar imagen genérica de la ciudad
+    return ImageService.getCityImage(normalizedCity);
+  }
+
   // Get top public guides - Guías predefinidas
   static Future<List<Map<String, dynamic>>> getTopPublicGuides(
       {int limit = 10}) async {
@@ -473,8 +493,7 @@ class GuideService {
           'destination': 'Berlín',
           'description':
               'Descubre la vibrante capital alemana con historia, cultura y vida nocturna',
-          'imageUrl':
-              'https://images.unsplash.com/photo-1597932552386-ad91621e4c8a?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+          'imageUrl': ImageService.getCityImage('berlin'),
           'createdAt': DateTime.now(),
           'isPublic': true,
           'duration': '3 días',
@@ -490,8 +509,7 @@ class GuideService {
           'destination': 'Budapest',
           'description':
               'Explora los baños termales, el Parlamento y los barrios históricos',
-          'imageUrl':
-              'https://images.unsplash.com/photo-1541849546-216549ae216d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+          'imageUrl': ImageService.getCityImage('budapest'),
           'createdAt': DateTime.now(),
           'isPublic': true,
           'duration': '4 días',
@@ -507,8 +525,7 @@ class GuideService {
           'destination': 'Roma',
           'description':
               'Sumérgete en la historia antigua del Coliseo, Vaticano y Fontana de Trevi',
-          'imageUrl':
-              'https://images.unsplash.com/photo-1552832230-c0197dd311b5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+          'imageUrl': ImageService.getCityImage('roma'),
           'createdAt': DateTime.now(),
           'isPublic': true,
           'duration': '5 días',
@@ -524,8 +541,7 @@ class GuideService {
           'destination': 'Milán',
           'description':
               'Desde el Duomo hasta la Scala, la elegancia italiana te espera',
-          'imageUrl':
-              'https://images.unsplash.com/photo-1610016302534-6f67f1c968d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
+          'imageUrl': ImageService.getCityImage('milan'),
           'createdAt': DateTime.now(),
           'isPublic': true,
           'duration': '3 días',
@@ -567,7 +583,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1587330979470-3595b84de63e?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['berlin_puerta de brandenburgo']!
                   ],
                 },
                 {
@@ -579,7 +596,7 @@ class GuideService {
                   'category': 'cultural',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1539650116574-75c0c6d73d0e?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['berlin_reichstag']!
                   ],
                 },
                 {
@@ -591,7 +608,7 @@ class GuideService {
                   'category': 'tour',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['berlin_unter den linden']!
                   ],
                 },
               ],
@@ -608,7 +625,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1590736969955-71cc94901144?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['berlin_muro de berlín'] ??
+                        ImageService.getCityImage('berlin')
                   ],
                 },
                 {
@@ -620,7 +638,8 @@ class GuideService {
                   'category': 'cultural',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1562832135-14a35d25edef?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['berlin_checkpoint charlie']!
                   ],
                 },
                 {
@@ -632,7 +651,8 @@ class GuideService {
                   'category': 'museum',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1529260830199-42c24126f198?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['berlin_isla de los museos']!
                   ],
                 },
               ],
@@ -649,7 +669,8 @@ class GuideService {
                   'category': 'sightseeing',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1566403283473-cb3b16046abe?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['berlin_torre de tv de berlín']!
                   ],
                 },
                 {
@@ -661,7 +682,7 @@ class GuideService {
                   'category': 'shopping',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['berlin_alexanderplatz']!
                   ],
                 },
                 {
@@ -673,7 +694,8 @@ class GuideService {
                   'category': 'tour',
                   'city': 'Berlín',
                   'images': [
-                    'https://images.unsplash.com/photo-1527838832700-5059252407fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages[
+                        'berlin_barrio de prenzlauer berg']!
                   ],
                 },
               ],
@@ -705,7 +727,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1541849546-216549ae216d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['budapest_parlamento húngaro']!
                   ],
                 },
                 {
@@ -717,7 +740,8 @@ class GuideService {
                   'category': 'cultural',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1580658769020-f2547b80b0d3?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages[
+                        'budapest_basílica de san esteban']!
                   ],
                 },
                 {
@@ -729,7 +753,8 @@ class GuideService {
                   'category': 'shopping',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['budapest_mercado central']!
                   ],
                 },
               ],
@@ -746,7 +771,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1571579234835-6fa0e4e8c2e7?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['budapest_castillo de buda']!
                   ],
                 },
                 {
@@ -758,19 +784,21 @@ class GuideService {
                   'category': 'sightseeing',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1578915503866-63ce536c5e73?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages[
+                        'budapest_bastión de los pescadores']!
                   ],
                 },
                 {
                   'id': 'budapest_2_3',
                   'title': 'Iglesia de Matías',
                   'description':
-                      'Hermosa iglesia gótica en el distrito del Castillo con arquitectura única',
-                  'duration': 45,
+                      'Iglesia histórica con arquitectura gótica espectacular y coronaciones reales',
+                  'duration': 60,
                   'category': 'cultural',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1578052047153-0e7845c8b9d9?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['budapest_iglesia de matías']!
                   ],
                 },
               ],
@@ -782,24 +810,25 @@ class GuideService {
                   'id': 'budapest_3_1',
                   'title': 'Balneario Széchenyi',
                   'description':
-                      'Famosos baños termales al aire libre, perfectos para relajarse',
-                  'duration': 180,
-                  'category': 'outdoor',
+                      'Baños termales históricos perfectos para relajarse en aguas medicinales',
+                  'duration': 150,
+                  'category': 'wellness',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1571747486840-f8dbf2a491ce?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['budapest_balneario széchenyi']!
                   ],
                 },
                 {
                   'id': 'budapest_3_2',
                   'title': 'Avenida Váci',
                   'description':
-                      'Principal calle peatonal con tiendas elegantes y restaurantes tradicionales',
+                      'Calle peatonal principal con tiendas, restaurantes y ambiente vibrante',
                   'duration': 90,
                   'category': 'shopping',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1578915503866-63ce536c5e73?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['budapest_avenida váci']!
                   ],
                 },
               ],
@@ -811,24 +840,25 @@ class GuideService {
                   'id': 'budapest_4_1',
                   'title': 'Crucero por el Danubio',
                   'description':
-                      'Navegación relajante con vistas de ambas orillas y monumentos iluminados',
+                      'Navegación panorámica con vistas únicas del Parlamento y castillos iluminados',
                   'duration': 120,
                   'category': 'tour',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1541849546-216549ae216d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['budapest_crucero por el danubio']!
                   ],
                 },
                 {
                   'id': 'budapest_4_2',
                   'title': 'Ruin Bars',
                   'description':
-                      'Emblemáticos bares en edificios abandonados, únicos en el mundo',
-                  'duration': 120,
+                      'Bares únicos en edificios abandonados, experiencia nocturna auténtica de Budapest',
+                  'duration': 180,
                   'category': 'nightlife',
                   'city': 'Budapest',
                   'images': [
-                    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['budapest_ruin bars']!
                   ],
                 },
               ],
@@ -860,7 +890,7 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1552832230-c0197dd311b5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_coliseo romano']!
                   ],
                 },
                 {
@@ -872,7 +902,7 @@ class GuideService {
                   'category': 'cultural',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1515542622106-78bda8ba0e5b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_foro romano']!
                   ],
                 },
                 {
@@ -884,7 +914,7 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1529260830199-42c24126f198?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_monte palatino']!
                   ],
                 },
               ],
@@ -901,7 +931,8 @@ class GuideService {
                   'category': 'cultural',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['roma_ciudad del vaticano']!
                   ],
                 },
                 {
@@ -913,7 +944,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1515542622106-78bda8ba0e5b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['roma_basílica de san pedro']!
                   ],
                 },
                 {
@@ -925,7 +957,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1552832230-c0197dd311b5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['roma_castel sant\'angelo']!
                   ],
                 },
               ],
@@ -942,7 +975,7 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1552832230-c0197dd311b5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_fontana de trevi']!
                   ],
                 },
                 {
@@ -954,7 +987,7 @@ class GuideService {
                   'category': 'sightseeing',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1515542622106-78bda8ba0e5b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_plaza de españa']!
                   ],
                 },
                 {
@@ -965,9 +998,7 @@ class GuideService {
                   'duration': 45,
                   'category': 'monument',
                   'city': 'Roma',
-                  'images': [
-                    'https://images.unsplash.com/photo-1529260830199-42c24126f198?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
-                  ],
+                  'images': [ImageService.popularGuidesImages['roma_panteón']!],
                 },
               ],
             },
@@ -983,7 +1014,7 @@ class GuideService {
                   'category': 'museum',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_villa borghese']!
                   ],
                 },
                 {
@@ -995,7 +1026,7 @@ class GuideService {
                   'category': 'tour',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_trastevere']!
                   ],
                 },
                 {
@@ -1007,7 +1038,7 @@ class GuideService {
                   'category': 'food',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_campo de\' fiori']!
                   ],
                 },
               ],
@@ -1024,7 +1055,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1529260830199-42c24126f198?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['roma_termas de caracalla']!
                   ],
                 },
                 {
@@ -1036,7 +1068,7 @@ class GuideService {
                   'category': 'sightseeing',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['roma_plaza navona']!
                   ],
                 },
                 {
@@ -1048,7 +1080,8 @@ class GuideService {
                   'category': 'sightseeing',
                   'city': 'Roma',
                   'images': [
-                    'https://images.unsplash.com/photo-1515542622106-78bda8ba0e5b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages[
+                        'roma_aventino y ojo de la cerradura']!
                   ],
                 },
               ],
@@ -1080,7 +1113,7 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1513581166391-887a96ddeafd?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['milán_duomo de milán']!
                   ],
                 },
                 {
@@ -1092,7 +1125,8 @@ class GuideService {
                   'category': 'shopping',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages[
+                        'milán_galleria vittorio emanuele ii']!
                   ],
                 },
                 {
@@ -1104,7 +1138,7 @@ class GuideService {
                   'category': 'cultural',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1578662996442-48f60103fc96?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['milán_teatro la scala']!
                   ],
                 },
               ],
@@ -1121,7 +1155,8 @@ class GuideService {
                   'category': 'monument',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1529260830199-42c24126f198?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['milán_castillo sforzesco']!
                   ],
                 },
                 {
@@ -1133,7 +1168,7 @@ class GuideService {
                   'category': 'outdoor',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['milán_parque sempione']!
                   ],
                 },
                 {
@@ -1145,7 +1180,7 @@ class GuideService {
                   'category': 'tour',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['milán_barrio de brera']!
                   ],
                 },
               ],
@@ -1162,7 +1197,8 @@ class GuideService {
                   'category': 'shopping',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService
+                        .popularGuidesImages['milán_quadrilatero della moda']!
                   ],
                 },
                 {
@@ -1174,7 +1210,7 @@ class GuideService {
                   'category': 'nightlife',
                   'city': 'Milán',
                   'images': [
-                    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80'
+                    ImageService.popularGuidesImages['milán_navigli']!
                   ],
                 },
               ],

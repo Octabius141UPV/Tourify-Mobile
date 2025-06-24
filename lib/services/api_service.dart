@@ -2,19 +2,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:tourify_flutter/services/auth_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:tourify_flutter/config/api_config.dart';
 
 class ApiService {
-  // URL del servidor - Obtenerla de .env o usar fallback
-  static String get baseUrl {
-    // Intentar leer de .env
-    final envUrl = dotenv.env['API_URL'];
-    if (envUrl != null && envUrl.isNotEmpty) {
-      return envUrl;
-    }
-
-    // Valores por defecto según plataforma
-    return 'http://localhost:8000';
-  }
+  // Usar ApiConfig en lugar de configuración local
+  static String get baseUrl => ApiConfig.baseUrl;
 
   // Singleton pattern
   static final ApiService _instance = ApiService._internal();

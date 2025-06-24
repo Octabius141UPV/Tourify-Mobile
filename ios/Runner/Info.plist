@@ -41,6 +41,10 @@
 	<string></string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+	</array>
 	<key>MinimumOSVersion</key>
 	<string>14.0</string>
 	<key>NSBonjourServices</key>
@@ -49,10 +53,10 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Esta aplicación necesita acceso a la red local para la depuración y el desarrollo</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Esta aplicación necesita acceder a tu ubicación para sugerir destinos y actividades cercanas.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Esta aplicación necesita acceder a tu ubicación para sugerir destinos y actividades cercanas, incluso cuando la app está en segundo plano.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Esta aplicación necesita acceder a tu ubicación para sugerir destinos y actividades cercanas.</string>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>Esta aplicación quiere enviarte notificaciones para mantenerte informado sobre tus guías y actividades.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
@@ -66,16 +70,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
