@@ -175,12 +175,13 @@ class CollaboratorsService {
       final idToken = await user.getIdToken();
 
       final response = await http.delete(
-        Uri.parse('$baseUrl/collaborators/$guideId'),
+        Uri.parse('$baseUrl/collaborators/remove'),
         headers: {
           'Authorization': 'Bearer $idToken',
           'Content-Type': 'application/json',
         },
         body: json.encode({
+          'guideId': guideId,
           'email': email,
         }),
       );
@@ -445,8 +446,11 @@ class CollaboratorsService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
+        print('Error: Usuario no autenticado en verifyAccessLink');
         throw Exception('Usuario no autenticado');
       }
+
+      print('Verificando link de acceso para guía: $guideId, token: $token');
 
       // Buscar el link en Firestore
       final linkDoc = await _firestore
@@ -457,33 +461,48 @@ class CollaboratorsService {
           .get();
 
       if (!linkDoc.exists) {
+        print('Error: Link de acceso no encontrado');
         return false;
       }
 
       final linkData = linkDoc.data()!;
 
       // Verificar que el link está activo y no ha expirado
-      if (!linkData['isActive'] ||
-          (linkData['expiresAt'] as Timestamp)
-              .toDate()
-              .isBefore(DateTime.now())) {
+      final isActive = linkData['isActive'] ?? false;
+      final expiresAt = linkData['expiresAt'] as Timestamp?;
+      final isExpired = expiresAt?.toDate().isBefore(DateTime.now()) ?? true;
+
+      print('Link status - isActive: $isActive, isExpired: $isExpired');
+
+      if (!isActive || isExpired) {
+        print('Error: Link inactivo o expirado');
         return false;
       }
 
+      // Verificar si el usuario ya es colaborador de esta guía
+      final existingRole = await getUserRole(guideId);
+      if (existingRole['role'] != 'none' && existingRole['role'] != null) {
+        print('Usuario ya es colaborador con rol: ${existingRole['role']}');
+        return true; // Ya es colaborador, considerarlo como éxito
+      }
+
       // Agregar al usuario como colaborador
+      print('Agregando usuario como colaborador con rol: ${linkData['role']}');
       await addCollaborator(
         guideId: guideId,
         email: user.email!,
         role: linkData['role'],
       );
 
-      // Desactivar el link después de usarlo
-      await linkDoc.reference.update({'isActive': false});
+      // NO desactivar el link después de usarlo - permitir múltiples usos hasta expirar
+      // await linkDoc.reference.update({'isActive': false});
 
+      print('Usuario agregado exitosamente como colaborador');
       return true;
     } catch (e) {
-      // Error silencioso
-      return false;
+      print('Error en verifyAccessLink: $e');
+      // Re-lanzar la excepción para que pueda ser manejada por el llamador
+      rethrow;
     }
   }
 

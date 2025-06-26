@@ -141,10 +141,26 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
     }
   }
 
+  /// Valida si un email tiene formato válido
+  bool _isValidEmail(String email) {
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
+    return emailRegex.hasMatch(email);
+  }
+
   Future<void> _addCollaborator() async {
     final email = _emailController.text.trim();
+
+    // Validar que el email no esté vacío
     if (email.isEmpty) {
       _showMessage('Por favor, introduce un email', isError: true);
+      return;
+    }
+
+    // Validar que el email tenga formato válido
+    if (!_isValidEmail(email)) {
+      _showMessage('Por favor, introduce un email válido', isError: true);
       return;
     }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourify_flutter/screens/guide_detail_screen.dart';
 import 'package:tourify_flutter/services/collaborators_service.dart';
 
@@ -156,10 +157,21 @@ class NavigationService {
   // Handle join guide deep link
   static Future<void> handleJoinGuideLink(String guideId, String token) async {
     final context = NavigationService.context;
-    if (context == null) return;
+    if (context == null) {
+      print('Error: NavigationService.context es null');
+      return;
+    }
 
     try {
       print('Procesando link de unirse a guía: $guideId con token: $token');
+
+      // Verificar que tenemos un usuario autenticado antes de proceder
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _showErrorDialog(
+            'Debes iniciar sesión antes de unirte a una guía.\n\nPor favor, inicia sesión e intenta nuevamente.');
+        return;
+      }
 
       // Mostrar diálogo de progreso
       showDialog(
@@ -181,7 +193,9 @@ class NavigationService {
           await collaboratorsService.verifyAccessLink(guideId, token);
 
       // Cerrar diálogo de progreso
-      Navigator.of(context).pop();
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
 
       if (result) {
         // Éxito: navegar a la guía y mostrar mensaje
@@ -193,7 +207,7 @@ class NavigationService {
       } else {
         // Error: mostrar mensaje de error
         _showErrorDialog(
-            'No se pudo unir a la guía.\n\nEl link puede haber expirado o ya fue utilizado.');
+            'No se pudo unir a la guía.\n\nPosibles causas:\n• El link ha expirado\n• Ya eres colaborador de esta guía\n• La guía no existe');
       }
     } catch (e) {
       // Cerrar diálogo de progreso si está abierto
@@ -202,8 +216,21 @@ class NavigationService {
       }
 
       print('Error al procesar link de unirse a guía: $e');
-      _showErrorDialog(
-          'Error al procesar el link de invitación.\n\nVerifica tu conexión a internet e inténtalo de nuevo.');
+
+      // Análisis más detallado del error
+      String errorMessage = 'Error al procesar el link de invitación.';
+      if (e.toString().contains('permission-denied')) {
+        errorMessage = 'No tienes permisos para acceder a esta guía.';
+      } else if (e.toString().contains('not-found')) {
+        errorMessage = 'La guía no existe o ha sido eliminada.';
+      } else if (e.toString().contains('network')) {
+        errorMessage =
+            'Error de conexión. Verifica tu internet e inténtalo de nuevo.';
+      } else {
+        errorMessage += '\n\n${e.toString()}';
+      }
+
+      _showErrorDialog(errorMessage);
     }
   }
 }

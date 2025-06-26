@@ -834,10 +834,10 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
         );
       }
 
-      // Llamada al backend para generar PDF
+      // Llamada al backend para generar PDF (versión directa sin Puppeteer)
       final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:3000';
       final response = await http.post(
-        Uri.parse('$baseUrl/guides/${widget.guideId}/export-pdf'),
+        Uri.parse('$baseUrl/guides/${widget.guideId}/export-pdf-direct'),
         headers: {
           'Content-Type': 'application/json',
           if (_auth.currentUser != null)
