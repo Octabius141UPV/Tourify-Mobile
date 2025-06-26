@@ -51,6 +51,18 @@ class _DiscoverScreenState extends State<DiscoverScreen>
   bool _isPositiveFeedback = false;
   int _currentStreak = 0; // Racha actual de actividades aceptadas
 
+  // Variables para controlar el estado del stream
+  bool _isStreamCompleted = false;
+  bool _isStreamLoading = true;
+  bool _isWaitingForStreamToComplete = false;
+  bool _waitingForMoreActivities =
+      false; // Esperando más actividades del stream
+  int _activitiesCountWhenWaiting =
+      0; // Cuántas actividades había cuando empezamos a esperar
+
+  // Set para trackear actividades ya evaluadas (por ID único)
+  Set<String> _evaluatedActivityIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -115,7 +127,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       destination: widget.destination ?? 'Madrid',
       startDate: widget.startDate,
       endDate: widget.endDate,
-      limit: 15, // Solicitar 15 actividades específicamente
+      limit: 5 * (widget.endDate!.difference(widget.startDate!).inDays + 1),
       travelers: widget.travelers,
       travelModes: widget.travelModes,
     );
@@ -155,7 +167,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       final guideId = await DiscoverService.createGuide(
         destination: widget.destination ?? 'Destino desconocido',
         startDate: widget.startDate ?? DateTime.now(),
-        endDate: widget.endDate ?? DateTime.now().add(const Duration(days: 3)),
+        endDate: widget.endDate ?? DateTime.now().add(const Duration(days: 7)),
         travelers: widget.travelers,
         travelModes: widget.travelModes ?? ['cultura', 'fiesta'],
         isPublic: false, // Siempre crear como borrador
@@ -196,7 +208,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       final guideId = await DiscoverService.createGuide(
         destination: widget.destination ?? 'Destino desconocido',
         startDate: widget.startDate ?? DateTime.now(),
-        endDate: widget.endDate ?? DateTime.now().add(const Duration(days: 3)),
+        endDate: widget.endDate ?? DateTime.now().add(const Duration(days: 7)),
         travelers: widget.travelers,
         travelModes: widget.travelModes ?? ['cultura', 'fiesta'],
         isPublic: false, // Siempre crear como borrador
@@ -361,6 +373,144 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     });
   }
 
+  // Filtrar actividades para mostrar solo las no evaluadas (método original como fallback)
+  List<Activity> _getUnevaluatedActivities(List<Activity> allActivities) {
+    if (allActivities.isEmpty) {
+      return [];
+    }
+
+    try {
+      final unevaluated = allActivities
+          .where((activity) =>
+              activity != null &&
+              activity.id.isNotEmpty &&
+              !_evaluatedActivityIds.contains(activity.id))
+          .toList();
+
+      // Mantener el orden original sin ninguna modificación
+      return unevaluated;
+    } catch (e) {
+      print('Error filtering activities: $e');
+      return [];
+    }
+  }
+
+  // NO ordenar actividades - mantener el orden original que viene del servidor
+  List<Activity> _sortActivitiesWithPartyLast(List<Activity> activities) {
+    // Devolver las actividades en su orden original sin ninguna modificación
+    return activities;
+  }
+
+  // Método para determinar si una actividad es de fiesta
+  bool _isPartyActivity(Activity activity) {
+    final category = activity.category.toLowerCase();
+
+    // Verificar si la categoría contiene palabras relacionadas con fiesta
+    return category.contains('fiesta') ||
+        category.contains('party') ||
+        category.contains('nightlife') ||
+        category.contains('vida nocturna') ||
+        category.contains('discoteca') ||
+        category.contains('bar') ||
+        category.contains('club') ||
+        category.contains('nocturna');
+  }
+
+  void _showCompletionDialog(List<Activity> activities) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.celebration, color: Colors.green),
+              const SizedBox(width: 8),
+              const Text('¡Terminaste!'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Has revisado todas las actividades disponibles.',
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info, color: Colors.blue, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${DiscoverService.acceptedActivities.length} actividades seleccionadas',
+                          style: TextStyle(
+                            color: Colors.blue,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (DiscoverService.rejectedActivities.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.cancel, color: Colors.grey, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${DiscoverService.rejectedActivities.length} actividades descartadas',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _finishDiscovering(activities);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+              ),
+              child: const Text(
+                'Crear mi guía',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Asegurar que el índice esté en rango válido
+  void _ensureValidCurrentIndex(List<Activity> activities) {
+    if (activities.isEmpty) {
+      _currentIndex = 0;
+    } else {
+      // Si el índice está fuera de rango, resetear a 0 para mostrar desde el principio
+      if (_currentIndex >= activities.length) {
+        _currentIndex = 0;
+      } else {
+        _currentIndex = _currentIndex.clamp(0, activities.length - 1);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!AuthService.isAuthenticated) {
@@ -393,6 +543,48 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     return StreamBuilder<List<Activity>>(
       stream: _activitiesStream,
       builder: (context, snapshot) {
+        // Actualizar estado del stream SOLO cuando sea necesario
+        final currentConnectionState = snapshot.connectionState;
+        final wasCompleted = _isStreamCompleted;
+        final newIsLoading =
+            currentConnectionState == ConnectionState.waiting ||
+                currentConnectionState == ConnectionState.active;
+        final newIsCompleted = currentConnectionState == ConnectionState.done;
+
+        // Solo ejecutar callback si hay cambios de estado importantes
+        if (_isStreamLoading != newIsLoading ||
+            _isStreamCompleted != newIsCompleted ||
+            (!wasCompleted &&
+                newIsCompleted &&
+                _isWaitingForStreamToComplete) ||
+            (_waitingForMoreActivities &&
+                snapshot.hasData &&
+                snapshot.data!.length > _activitiesCountWhenWaiting)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            setState(() {
+              _isStreamLoading = newIsLoading;
+              _isStreamCompleted = newIsCompleted;
+
+              // Si el stream acaba de completarse y el usuario estaba esperando
+              if (!wasCompleted &&
+                  _isStreamCompleted &&
+                  _isWaitingForStreamToComplete) {
+                _isWaitingForStreamToComplete = false;
+                // Ir automáticamente a crear la guía
+                _finishDiscovering(snapshot.data ?? []);
+              }
+
+              // Solo volver al discover si llegaron MÁS actividades de las que había cuando empezamos a esperar
+              if (_waitingForMoreActivities &&
+                  snapshot.hasData &&
+                  snapshot.data!.length > _activitiesCountWhenWaiting) {
+                _waitingForMoreActivities = false;
+                _activitiesCountWhenWaiting = 0; // Reset
+              }
+            });
+          });
+        }
+
         if (snapshot.hasError) {
           return Scaffold(
             appBar: AppBar(
@@ -450,10 +642,41 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           );
         }
 
-        final activities = snapshot.data!;
+        final allActivities = snapshot.data!;
+        final activities = _getUnevaluatedActivities(allActivities);
+
+        // Debug logging para entender el problema del orden
+        if (allActivities.isNotEmpty && _isStreamLoading) {
+          print('📊 Estado del stream:');
+          print('   Total actividades: ${allActivities.length}');
+          print('   Actividades sin evaluar: ${activities.length}');
+          print('   Índice actual: $_currentIndex');
+          print('   Stream completado: $_isStreamCompleted');
+          print('   Evaluadas: ${_evaluatedActivityIds.length}');
+
+          // Mostrar títulos para verificar orden
+          if (activities.isNotEmpty) {
+            print('   Próximas actividades:');
+            for (int i = 0; i < activities.length && i < 3; i++) {
+              final activity = activities[i];
+              print('     [$i] ${activity.name}');
+            }
+          }
+        }
+
+        // Asegurar que el índice esté en rango válido
+        _ensureValidCurrentIndex(activities);
+
+        // SOLUCIÓN ADICIONAL: Si hay problemas de índice, forzar reset a 0
+        if (activities.isNotEmpty &&
+            (_currentIndex >= activities.length || _currentIndex < 0)) {
+          print(
+              '🔄 Reseteando índice actual de $_currentIndex a 0 (activities.length: ${activities.length})');
+          _currentIndex = 0;
+        }
 
         // Si la lista está vacía pero el stream está activo, mostrar loading
-        if (activities.isEmpty &&
+        if (allActivities.isEmpty &&
             snapshot.connectionState == ConnectionState.active) {
           return Scaffold(
             appBar: AppBar(
@@ -482,8 +705,8 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           );
         }
 
-        // Si la lista está vacía y el stream terminó, mostrar mensaje sin actividades
-        if (activities.isEmpty) {
+        // Si no hay actividades sin evaluar y el stream terminó, mostrar mensaje de finalización
+        if (activities.isEmpty && _isStreamCompleted) {
           return Scaffold(
             appBar: AppBar(
               title: Text('Sin actividades'),
@@ -511,12 +734,266 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           );
         }
 
-        return _buildDiscoverInterface(activities);
+        // Verificar si estamos esperando más actividades (usuario ha evaluado todas las disponibles)
+        if (_waitingForMoreActivities && !_isStreamCompleted) {
+          return _buildWaitingForMoreActivitiesInterface();
+        }
+
+        // Si no hay actividades sin evaluar pero el stream sigue activo, mostrar pantalla de espera
+        if (activities.isEmpty && !_isStreamCompleted) {
+          // Activar estado de espera automáticamente
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!_waitingForMoreActivities) {
+              setState(() {
+                _waitingForMoreActivities = true;
+                _activitiesCountWhenWaiting = allActivities.length;
+              });
+            }
+          });
+          return _buildWaitingForMoreActivitiesInterface();
+        }
+
+        return _buildDiscoverInterface(activities, allActivities);
       },
     );
   }
 
-  Widget _buildDiscoverInterface(List<Activity> activities) {
+  Widget _buildWaitingForMoreActivitiesInterface() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: Icon(
+            Icons.close,
+            color: Colors.grey[600],
+            size: 28,
+          ),
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  title: Row(
+                    children: [
+                      Icon(Icons.exit_to_app, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: const Text('Salir del descubrimiento'),
+                      ),
+                    ],
+                  ),
+                  content: const Text(
+                    '¿Estás seguro de que quieres salir? Perderás el progreso actual de descubrimiento.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancelar'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                      ),
+                      onPressed: () {
+                        DiscoverService.reset();
+                        Navigator.of(context).pop(); // Close dialog
+                        Navigator.of(context).pop(); // Close discover screen
+                      },
+                      child: const Text(
+                        'Salir',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
+        title: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                    ),
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'Cargando más actividades...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            child: ElevatedButton.icon(
+              onPressed: !_isStreamCompleted
+                  ? () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                              'Esperando que lleguen más actividades del servidor...'),
+                          backgroundColor: Colors.orange,
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+              ),
+              icon: const Icon(Icons.hourglass_empty, size: 16),
+              label: const Text(
+                'Esperando...',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.hourglass_empty,
+                size: 60,
+                color: Colors.orange,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Has evaluado todas las actividades disponibles',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Estamos cargando más opciones para ti...',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.blue.withOpacity(0.3),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info, color: Colors.blue, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Progreso actual:',
+                        style: TextStyle(
+                          color: Colors.blue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 16),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${DiscoverService.acceptedActivities.length} actividades seleccionadas',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (DiscoverService.rejectedActivities.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.cancel, color: Colors.grey, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${DiscoverService.rejectedActivities.length} actividades descartadas',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscoverInterface(
+      List<Activity> activities, List<Activity> allActivities) {
     // Validación adicional de seguridad
     if (activities.isEmpty) {
       return Scaffold(
@@ -544,6 +1021,14 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         ),
       );
     }
+
+    // Mantener el orden original de las actividades como llegan del servidor
+    // La primera actividad del stream debe ser la primera en mostrarse
+
+    // SOLUCIÓN CRÍTICA: Usar la longitud de activities como key para forzar rebuild del CardSwiper
+    // Esto evita problemas de índices cuando la lista filtrada cambia de tamaño
+    final cardSwiperKey =
+        Key('card_swiper_${activities.length}_${_evaluatedActivityIds.length}');
 
     return WillPopScope(
       onWillPop: () async {
@@ -651,7 +1136,6 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           ),
           title: Column(
             children: [
-              const SizedBox(height: 8),
               Container(
                 height: 8,
                 margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -674,7 +1158,10 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                       // Verificar que las animaciones estén inicializadas
                       if (!mounted) {
                         return LinearProgressIndicator(
-                          value: _currentIndex / activities.length,
+                          value: activities.isEmpty
+                              ? 0.0
+                              : (_currentIndex / activities.length)
+                                  .clamp(0.0, 1.0),
                           backgroundColor: Colors.transparent,
                           valueColor:
                               AlwaysStoppedAnimation<Color>(Colors.blue),
@@ -682,7 +1169,9 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                         );
                       }
 
-                      final baseProgress = _currentIndex / activities.length;
+                      final baseProgress = activities.isEmpty
+                          ? 0.0
+                          : (_currentIndex / activities.length).clamp(0.0, 1.0);
                       final animatedProgress = baseProgress +
                           (_progressAnimation.value *
                               0.1); // Pequeño efecto de pulso
@@ -705,140 +1194,154 @@ class _DiscoverScreenState extends State<DiscoverScreen>
             ],
           ),
           actions: [
-            // Indicador de racha estilo Duolingo
-            if (_currentStreak > 0)
-              Container(
-                margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: _currentStreak >= 5
-                        ? [Colors.orange, Colors.red] // Racha de fuego
-                        : [Colors.green, Colors.teal], // Racha normal
-                  ),
-                  borderRadius: BorderRadius.circular(15),
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          (_currentStreak >= 5 ? Colors.orange : Colors.green)
-                              .withOpacity(0.3),
-                      blurRadius: 8,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _currentStreak >= 5
-                          ? Icons.local_fire_department
-                          : Icons.flash_on,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$_currentStreak',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             Container(
               margin: const EdgeInsets.only(right: 8),
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      bool includeRemaining =
-                          true; // Mover la variable aquí para acceso global en el diálogo
-                      return StatefulBuilder(
-                        builder: (context, setDialogState) {
-                          return AlertDialog(
-                            title: Row(
-                              children: [
-                                Icon(Icons.playlist_add_check,
-                                    color: Colors.blue),
-                                const SizedBox(width: 8),
-                                const Text('Crear mi guía'),
-                              ],
-                            ),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(Icons.info,
-                                              color: Colors.blue, size: 20),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              '${DiscoverService.acceptedActivities.length} seleccionadas',
-                                              style: TextStyle(
-                                                color: Colors.blue,
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (activities.length - _currentIndex >
-                                          0) ...[
-                                        const SizedBox(height: 12),
+              child: GestureDetector(
+                onTap: !_isStreamCompleted
+                    ? () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Esperando que termine de cargar todas las actividades...'),
+                            backgroundColor: Colors.orange,
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    : null,
+                child: ElevatedButton.icon(
+                  onPressed: _isStreamCompleted
+                      ? () {
+                          showDialog(
+                            context: context,
+                            builder: (BuildContext context) {
+                              bool includeRemaining =
+                                  true; // Mover la variable aquí para acceso global en el diálogo
+                              return StatefulBuilder(
+                                builder: (context, setDialogState) {
+                                  return AlertDialog(
+                                    title: Row(
+                                      children: [
+                                        Icon(Icons.playlist_add_check,
+                                            color: Colors.blue),
+                                        const SizedBox(width: 8),
+                                        const Text('Crear mi guía'),
+                                      ],
+                                    ),
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
                                         Container(
                                           padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
-                                            color: includeRemaining
-                                                ? Colors.green.withOpacity(0.1)
-                                                : Colors.grey.withOpacity(0.1),
                                             borderRadius:
                                                 BorderRadius.circular(8),
-                                            border: Border.all(
-                                              color: includeRemaining
-                                                  ? Colors.green
-                                                      .withOpacity(0.3)
-                                                  : Colors.grey
-                                                      .withOpacity(0.3),
-                                            ),
                                           ),
                                           child: Column(
                                             children: [
                                               Row(
                                                 children: [
-                                                  Checkbox(
-                                                    value: includeRemaining,
-                                                    onChanged: (value) {
-                                                      setDialogState(() {
-                                                        includeRemaining =
-                                                            value ?? true;
-                                                      });
-                                                    },
-                                                    activeColor: Colors.green,
-                                                  ),
+                                                  Icon(Icons.info,
+                                                      color: Colors.blue,
+                                                      size: 20),
                                                   const SizedBox(width: 8),
                                                   Expanded(
                                                     child: Text(
-                                                      '${activities.length - _currentIndex} actividades se añadirán',
+                                                      '${DiscoverService.acceptedActivities.length} seleccionadas',
                                                       style: TextStyle(
+                                                        color: Colors.blue,
                                                         fontWeight:
                                                             FontWeight.w500,
-                                                        color: includeRemaining
-                                                            ? Colors.green
-                                                            : Colors.grey[600],
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              if ((activities.length -
+                                                          _currentIndex)
+                                                      .clamp(0,
+                                                          activities.length) >
+                                                  0) ...[
+                                                const SizedBox(height: 12),
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.all(12),
+                                                  decoration: BoxDecoration(
+                                                    color: includeRemaining
+                                                        ? Colors.green
+                                                            .withOpacity(0.1)
+                                                        : Colors.grey
+                                                            .withOpacity(0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            8),
+                                                    border: Border.all(
+                                                      color: includeRemaining
+                                                          ? Colors.green
+                                                              .withOpacity(0.3)
+                                                          : Colors.grey
+                                                              .withOpacity(0.3),
+                                                    ),
+                                                  ),
+                                                  child: Column(
+                                                    children: [
+                                                      Row(
+                                                        children: [
+                                                          Checkbox(
+                                                            value:
+                                                                includeRemaining,
+                                                            onChanged: (value) {
+                                                              setDialogState(
+                                                                  () {
+                                                                includeRemaining =
+                                                                    value ??
+                                                                        true;
+                                                              });
+                                                            },
+                                                            activeColor:
+                                                                Colors.green,
+                                                          ),
+                                                          const SizedBox(
+                                                              width: 8),
+                                                          Expanded(
+                                                            child: Text(
+                                                              '${(activities.length - _currentIndex).clamp(0, activities.length)} actividades se añadirán',
+                                                              style: TextStyle(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w500,
+                                                                color: includeRemaining
+                                                                    ? Colors
+                                                                        .green
+                                                                    : Colors.grey[
+                                                                        600],
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                              const SizedBox(height: 12),
+                                              const Divider(height: 1),
+                                              const SizedBox(height: 8),
+                                              Row(
+                                                children: [
+                                                  Icon(Icons.list_alt,
+                                                      color: Colors.blue,
+                                                      size: 20),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'Total: ${DiscoverService.acceptedActivities.length + (includeRemaining && (activities.length - _currentIndex).clamp(0, activities.length) > 0 ? (activities.length - _currentIndex).clamp(0, activities.length) : 0)} actividades',
+                                                      style: TextStyle(
+                                                        color: Colors.blue,
+                                                        fontWeight:
+                                                            FontWeight.bold,
                                                       ),
                                                     ),
                                                   ),
@@ -848,81 +1351,72 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                                           ),
                                         ),
                                       ],
-                                      const SizedBox(height: 12),
-                                      const Divider(height: 1),
-                                      const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          Icon(Icons.list_alt,
-                                              color: Colors.blue, size: 20),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              'Total: ${DiscoverService.acceptedActivities.length + (includeRemaining && activities.length - _currentIndex > 0 ? (activities.length - _currentIndex) : 0)} actividades',
-                                              style: TextStyle(
-                                                color: Colors.blue,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(),
+                                        child: const Text(
+                                            'Continuar descubriendo'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          Navigator.of(context).pop();
+                                          // Agregar automáticamente las actividades restantes solo si la opción está marcada
+                                          if (includeRemaining) {
+                                            final remainingActivities =
+                                                activities
+                                                    .skip(_currentIndex)
+                                                    .toList();
+                                            if (remainingActivities
+                                                .isNotEmpty) {
+                                              for (final activity
+                                                  in remainingActivities) {
+                                                DiscoverService.acceptActivity(
+                                                    activity);
+                                              }
+                                            }
+                                          }
+                                          _finishDiscoveringWithoutAutoAdd(
+                                              activities);
+                                        },
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.blue,
+                                        ),
+                                        child: const Text(
+                                          'Crear guía',
+                                          style: TextStyle(color: Colors.white),
+                                        ),
                                       ),
                                     ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('Continuar descubriendo'),
-                              ),
-                              ElevatedButton(
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                  // Agregar automáticamente las actividades restantes solo si la opción está marcada
-                                  if (includeRemaining) {
-                                    final remainingActivities =
-                                        activities.skip(_currentIndex).toList();
-                                    if (remainingActivities.isNotEmpty) {
-                                      for (final activity
-                                          in remainingActivities) {
-                                        DiscoverService.acceptActivity(
-                                            activity);
-                                      }
-                                    }
-                                  }
-                                  _finishDiscoveringWithoutAutoAdd(activities);
+                                  );
                                 },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                ),
-                                child: const Text(
-                                  'Crear guía',
-                                  style: TextStyle(color: Colors.white),
-                                ),
-                              ),
-                            ],
+                              );
+                            },
                           );
-                        },
-                      );
-                    },
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor:
+                        _isStreamCompleted ? Colors.blue : Colors.grey,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
-                ),
-                icon: const Icon(Icons.playlist_add_check, size: 16),
-                label: const Text(
-                  'Crear',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  icon: Icon(
+                      _isStreamCompleted
+                          ? Icons.playlist_add_check
+                          : Icons.hourglass_empty,
+                      size: 16),
+                  label: Text(
+                    _isStreamCompleted ? 'Crear' : 'Cargando...',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
             ),
@@ -934,155 +1428,178 @@ class _DiscoverScreenState extends State<DiscoverScreen>
               children: [
                 Expanded(
                   child: CardSwiper(
+                    key:
+                        cardSwiperKey, // CRÍTICO: Key para forzar rebuild cuando cambie la lista
                     controller: controller,
-                    cardsCount: activities.length,
-                    numberOfCardsDisplayed: activities.length >= 2 ? 2 : 1,
-                    backCardOffset: const Offset(20, 20),
+                    cardsCount: activities
+                        .length, // Simplificado - activities nunca está vacío aquí
+                    numberOfCardsDisplayed:
+                        1, // Solo mostrar una carta a la vez
+                    backCardOffset:
+                        const Offset(0, 0), // Sin offset para la carta de atrás
                     padding: const EdgeInsets.all(16.0),
                     onSwipe: (previousIndex, currentIndex, direction) {
+                      // Validación de seguridad para evitar errores de índice
+                      if (previousIndex >= activities.length ||
+                          previousIndex < 0 ||
+                          activities.isEmpty) {
+                        print(
+                            '⚠️ Swipe inválido - previousIndex: $previousIndex, activities.length: ${activities.length}');
+                        return true; // Ignorar swipe inválido
+                      }
+
+                      final activity = activities[previousIndex];
+
+                      // Validar que la actividad existe
+                      if (activity == null) {
+                        print('⚠️ Actividad nula en índice $previousIndex');
+                        return true;
+                      }
+
                       setState(() {
-                        _currentIndex = currentIndex ?? previousIndex + 1;
+                        _currentIndex = (currentIndex ?? previousIndex + 1)
+                            .clamp(0, activities.length);
                       });
 
-                      if (previousIndex < activities.length) {
-                        final activity = activities[previousIndex];
-                        if (direction == CardSwiperDirection.right) {
-                          // Registrar actividad aceptada en el servicio
-                          DiscoverService.acceptActivity(activity);
+                      // Marcar esta actividad como evaluada
+                      _evaluatedActivityIds.add(activity.id);
 
-                          setState(() {
-                            _currentStreak++; // Incrementar racha
-                          });
+                      if (direction == CardSwiperDirection.right) {
+                        // Registrar actividad aceptada en el servicio
+                        DiscoverService.acceptActivity(activity);
 
-                          // Mostrar feedback positivo estilo Duolingo
-                          final messages = [
-                            '¡Genial elección!',
-                            '¡Me gusta!',
-                            '¡Excelente!',
-                            '¡Perfecto!',
-                            '¡Increíble!',
-                            '¡Buena opción!',
-                            '¡Fantástico!',
-                          ];
+                        setState(() {
+                          _currentStreak++; // Incrementar racha
+                        });
 
-                          // Mostrar feedback visual sin texto
-                          _showVisualFeedback(true);
+                        // Mostrar feedback positivo estilo Duolingo
+                        final messages = [
+                          '¡Genial elección!',
+                          '¡Me gusta!',
+                          '¡Excelente!',
+                          '¡Perfecto!',
+                          '¡Increíble!',
+                          '¡Buena opción!',
+                          '¡Fantástico!',
+                        ];
 
-                          // Celebración en hitos
-                          if (DiscoverService.acceptedActivities.length % 3 ==
-                              0) {
-                            Future.delayed(const Duration(milliseconds: 300),
-                                () {
-                              HapticFeedback.mediumImpact();
-                              _celebrationController.forward().then((_) {
-                                Future.delayed(
-                                    const Duration(milliseconds: 500), () {
-                                  _celebrationController.reset();
-                                });
+                        // Mostrar feedback visual sin texto
+                        _showVisualFeedback(true);
+
+                        // Celebración en hitos
+                        if (DiscoverService.acceptedActivities.length % 3 ==
+                            0) {
+                          Future.delayed(const Duration(milliseconds: 300), () {
+                            HapticFeedback.mediumImpact();
+                            _celebrationController.forward().then((_) {
+                              Future.delayed(const Duration(milliseconds: 500),
+                                  () {
+                                _celebrationController.reset();
                               });
                             });
-                          }
-                        } else if (direction == CardSwiperDirection.left) {
-                          // Registrar actividad rechazada en el servicio
-                          DiscoverService.rejectActivity(activity);
-
-                          setState(() {
-                            _currentStreak = 0; // Resetear racha
                           });
-
-                          // Mostrar feedback visual sin texto
-                          _showVisualFeedback(false);
                         }
+                      } else if (direction == CardSwiperDirection.left) {
+                        // Registrar actividad rechazada en el servicio
+                        DiscoverService.rejectActivity(activity);
+
+                        setState(() {
+                          _currentStreak = 0; // Resetear racha
+                        });
+
+                        // Mostrar feedback visual sin texto
+                        _showVisualFeedback(false);
                       }
                       return true;
                     },
                     onEnd: () {
-                      // Cuando se acaban las actividades, mostrar diálogo para crear guía
-                      showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (BuildContext context) {
-                          return AlertDialog(
-                            title: Row(
-                              children: [
-                                Icon(Icons.celebration, color: Colors.green),
-                                const SizedBox(width: 8),
-                                const Text('¡Terminaste!'),
-                              ],
-                            ),
-                            content: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  'Has revisado todas las actividades disponibles.',
-                                ),
-                                const SizedBox(height: 16),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(Icons.info,
-                                              color: Colors.blue, size: 20),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            '${DiscoverService.acceptedActivities.length} actividades seleccionadas',
-                                            style: TextStyle(
-                                              color: Colors.blue,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (DiscoverService
-                                          .rejectedActivities.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            Icon(Icons.cancel,
-                                                color: Colors.grey, size: 20),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              '${DiscoverService.rejectedActivities.length} actividades descartadas',
-                                              style: TextStyle(
-                                                color: Colors.grey,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            actions: [
-                              ElevatedButton(
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                  _finishDiscovering(activities);
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                ),
-                                child: const Text(
-                                  'Crear mi guía',
-                                  style: TextStyle(color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      );
+                      // Verificar si el stream ha terminado antes de permitir crear la guía
+                      if (!_isStreamCompleted) {
+                        // No mostrar diálogo modal, solo cambiar el estado a "esperando más actividades"
+                        setState(() {
+                          _waitingForMoreActivities = true;
+                          _activitiesCountWhenWaiting = allActivities
+                              .length; // Recordar cuántas actividades había en total
+                        });
+                        return;
+                      }
+
+                      // Si el stream ha terminado, ir automáticamente a crear la guía
+                      _finishDiscovering(allActivities);
                     },
                     cardBuilder: (context, index, horizontalThresholdPercentage,
                         verticalThresholdPercentage) {
+                      // Validación de seguridad para evitar errores de índice
+                      if (activities.isEmpty ||
+                          index >= activities.length ||
+                          index < 0) {
+                        print(
+                            '🚨 PROBLEMA CRÍTICO - CardBuilder índice inválido: $index, activities.length: ${activities.length}');
+                        print(
+                            '   Total actividades: ${allActivities.length}, Evaluadas: ${_evaluatedActivityIds.length}');
+
+                        // En lugar de mostrar "Cargando", mostrar un error más claro
+                        return Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            color: Colors.orange[100],
+                            border: Border.all(color: Colors.orange, width: 2),
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.sync_problem,
+                                    size: 48, color: Colors.orange),
+                                SizedBox(height: 16),
+                                Text(
+                                  'Error de sincronización',
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Índice $index fuera de rango (${activities.length} actividades disponibles)',
+                                  style: TextStyle(
+                                      fontSize: 12, color: Colors.grey[600]),
+                                  textAlign: TextAlign.center,
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Total: ${allActivities.length} | Evaluadas: ${_evaluatedActivityIds.length}',
+                                  style: TextStyle(
+                                      fontSize: 10, color: Colors.grey[500]),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
                       final activity = activities[index];
+
+                      // Validación adicional de la actividad
+                      if (activity == null) {
+                        print(
+                            '⚠️ Actividad nula en índice $index del cardBuilder');
+                        return Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            color: Colors.grey[200],
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.warning,
+                                    color: Colors.orange, size: 48),
+                                SizedBox(height: 16),
+                                Text('Actividad no disponible'),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
                       return Card(
                         elevation: 4,
                         shape: RoundedRectangleBorder(

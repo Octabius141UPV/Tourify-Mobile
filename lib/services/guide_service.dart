@@ -100,7 +100,7 @@ class GuideService {
     }
   }
 
-  // Create guide days with activities distributed across them
+  // Create guide days respecting the EXACT order from server
   static Future<void> _createGuideDays(
     String guideId,
     DateTime startDate,
@@ -109,49 +109,70 @@ class GuideService {
   ) async {
     try {
       final days = _getDaysBetweenDates(startDate, endDate);
-      final activitiesPerDay = (activities.length / days.length).ceil();
+
+      // NO redistribuir actividades - mantener el orden exacto del servidor
+      // Simplemente añadir las actividades en orden secuencial
+
+      int activityIndex = 0;
 
       for (int i = 0; i < days.length; i++) {
-        final startIndex = i * activitiesPerDay;
-        final endIndex =
-            (startIndex + activitiesPerDay).clamp(0, activities.length);
-        final dayActivities = activities.sublist(startIndex, endIndex);
+        List<Map<String, dynamic>> dayActivities = [];
+
+        // Determinar cuántas actividades van en este día
+        // Distribución simple: si hay más actividades que días, llenar uniformemente
+        // Si hay menos actividades que días, algunos días quedarán vacíos
+
+        int activitiesForThisDay = 0;
+        if (activityIndex < activities.length) {
+          // Distribución básica: dividir las restantes entre los días restantes
+          final remainingActivities = activities.length - activityIndex;
+          final remainingDays = days.length - i;
+          activitiesForThisDay = (remainingActivities / remainingDays).ceil();
+        }
+
+        // Añadir actividades en orden secuencial (sin alterar el orden)
+        for (int j = 0;
+            j < activitiesForThisDay && activityIndex < activities.length;
+            j++) {
+          final activity = activities[activityIndex];
+          dayActivities.add({
+            'id': activity.id,
+            'name': activity.name,
+            'description': activity.description,
+            'imageUrl': activity.imageUrl,
+            'rating': activity.rating,
+            'reviews': activity.reviews,
+            'category': activity.category,
+            'price': activity.price,
+            'duration': activity.duration,
+            'tags': activity.tags,
+            'order': j, // Orden dentro del día
+          });
+          activityIndex++;
+        }
 
         await _firestore
             .collection('guides')
             .doc(guideId)
             .collection('days')
-            .doc((i + 1)
-                .toString()) // Usar el número de día como ID del documento
+            .doc((i + 1).toString())
             .set({
           'date': Timestamp.fromDate(days[i]),
           'dayNumber': i + 1,
-          'activities': dayActivities
-              .map((activity) => {
-                    'id': activity.id,
-                    'name': activity.name,
-                    'description': activity.description,
-                    'imageUrl': activity.imageUrl,
-                    'rating': activity.rating,
-                    'reviews': activity.reviews,
-                    'category': activity.category,
-                    'price': activity.price,
-                    'duration': activity.duration,
-                    'tags': activity.tags,
-                    'order': dayActivities.indexOf(activity),
-                  })
-              .toList(),
+          'activities': dayActivities,
           'totalDuration': dayActivities.fold<int>(
             0,
-            (sum, activity) => sum + activity.duration,
+            (sum, activity) => sum + (activity['duration'] as int? ?? 0),
           ),
           'totalPrice': dayActivities.fold<double>(
             0.0,
-            (sum, activity) => sum + activity.price,
+            (sum, activity) => sum + (activity['price'] as double? ?? 0.0),
           ),
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
+
+      print('✅ Actividades guardadas respetando orden original del servidor');
     } catch (e) {
       print('Error creating guide days: $e');
     }

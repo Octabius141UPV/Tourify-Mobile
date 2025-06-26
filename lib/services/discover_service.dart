@@ -80,7 +80,7 @@ class DiscoverService {
         // Convertir actividades del API al formato local
         final activities = ActivityMapper.fromApiListToLocal(apiActivities);
 
-        // Emitir las actividades conforme van llegando
+        // Emitir las actividades conforme van llegando SIN ordenar para no interferir con el stream
         yield activities;
       }
 
@@ -152,7 +152,7 @@ class DiscoverService {
       'timestamp': DateTime.now(),
     });
 
-    _sendRating(activity, true);
+    // NO enviar rating inmediatamente - se enviará al final
   }
 
   // Registrar una actividad rechazada
@@ -166,7 +166,7 @@ class DiscoverService {
       'timestamp': DateTime.now(),
     });
 
-    _sendRating(activity, false);
+    // NO enviar rating inmediatamente - se enviará al final
   }
 
   // Historial de acciones para poder deshacer
@@ -264,6 +264,49 @@ class DiscoverService {
     // El servidor puede manejar esto de manera diferente en el futuro
   }
 
+  // Enviar todas las valoraciones acumuladas al final en un solo lote
+  static Future<void> _sendAllRatingsAtEnd() async {
+    if (!AuthService.isAuthenticated) {
+      return;
+    }
+
+    List<Map<String, dynamic>> allRatings = [];
+
+    // Añadir actividades aceptadas (rating positivo)
+    for (final activity in _acceptedActivities) {
+      allRatings.add({
+        'activityId': activity.id,
+        'value': 1,
+        'activityData': {
+          'title': activity.name,
+          'description': activity.description,
+          'image': activity.imageUrl,
+          'category': activity.category,
+        }
+      });
+    }
+
+    // Añadir actividades rechazadas (rating negativo)
+    for (final activity in _rejectedActivities) {
+      allRatings.add({
+        'activityId': activity.id,
+        'value': 0,
+        'activityData': {
+          'title': activity.name,
+          'description': activity.description,
+          'image': activity.imageUrl,
+          'category': activity.category,
+        }
+      });
+    }
+
+    // Enviar todas las valoraciones en un solo lote
+    if (allRatings.isNotEmpty) {
+      print('📊 Enviando ${allRatings.length} valoraciones al final');
+      await _apiService.submitRatings(allRatings);
+    }
+  }
+
   // Crear una guía con las actividades seleccionadas
   static Future<String?> createGuide({
     required String destination,
@@ -279,6 +322,9 @@ class DiscoverService {
       if (!AuthService.isAuthenticated) {
         throw Exception('Se requiere autenticación para crear una guía');
       }
+
+      // ENVIAR TODAS LAS VALORACIONES AL FINAL, antes de crear la guía
+      await _sendAllRatingsAtEnd();
 
       // Usar el servicio de Firebase para crear la guía
       final guideId = await GuideService.createGuide(
@@ -315,6 +361,9 @@ class DiscoverService {
       if (!AuthService.isAuthenticated) {
         throw Exception('Se requiere autenticación para crear una guía');
       }
+
+      // ENVIAR TODAS LAS VALORACIONES AL FINAL, antes de crear la guía
+      await _sendAllRatingsAtEnd();
 
       // Convertir actividades aceptadas al formato de la API
       final List<Map<String, dynamic>> activities = _acceptedActivities

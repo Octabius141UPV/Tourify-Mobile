@@ -3,6 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourify_flutter/screens/home_screen.dart';
 import 'package:tourify_flutter/screens/register_screen.dart';
 import 'package:tourify_flutter/services/auth_service.dart';
+import 'package:local_auth/local_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io';
+import '../config/app_colors.dart';
+import '../utils/safe_area_helper.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,13 +19,56 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final LocalAuthentication _localAuth = LocalAuthentication();
   bool _isLoading = false;
+  bool _isBiometricLoading = false;
+  bool _isBiometricAvailable = false;
+  bool _rememberMe = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     print('LoginScreen inicializada');
+    _checkBiometricAvailability();
+    _loadRememberedCredentials();
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    try {
+      print('🔍 Verificando disponibilidad biométrica...');
+
+      final bool isAvailable = await _localAuth.canCheckBiometrics;
+      final bool isDeviceSupported = await _localAuth.isDeviceSupported();
+      final List<BiometricType> availableBiometrics =
+          await _localAuth.getAvailableBiometrics();
+
+      print('📱 Dispositivo soporta biometría: $isDeviceSupported');
+      print('🔒 Puede verificar biometría: $isAvailable');
+      print('🆔 Tipos disponibles: $availableBiometrics');
+
+      setState(() {
+        _isBiometricAvailable =
+            isAvailable && isDeviceSupported && availableBiometrics.isNotEmpty;
+      });
+
+      print('✅ Biometría disponible: $_isBiometricAvailable');
+    } catch (e) {
+      print('❌ Error verificando biometría: $e');
+      setState(() {
+        _isBiometricAvailable = false;
+      });
+    }
+  }
+
+  Future<bool> _hasStoredCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.containsKey('saved_email') &&
+          prefs.containsKey('saved_password');
+    } catch (e) {
+      return false;
+    }
   }
 
   final Map<String, String> _firebaseErrorMessages = {
@@ -73,6 +121,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted && userCredential.user != null) {
         print('Login exitoso: ${userCredential.user?.email}');
+
+        // Guardar o limpiar credenciales según la opción de recordar
+        if (_rememberMe) {
+          await AuthService.saveCredentialsForRememberMe(
+            _emailController.text.trim(),
+            _passwordController.text,
+          );
+          await AuthService.saveRememberMeStatus(true);
+        } else {
+          await AuthService.clearRememberedCredentials();
+        }
+
         Navigator.pushAndRemoveUntil(
           context,
           PageRouteBuilder(
@@ -140,17 +200,143 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleBiometricLogin() async {
+    setState(() {
+      _isBiometricLoading = true;
+      _error = null;
+    });
+
+    try {
+      print('🔐 Iniciando autenticación biométrica...');
+
+      // Verificar que aún hay biometría disponible
+      final bool canCheck = await _localAuth.canCheckBiometrics;
+      if (!canCheck) {
+        setState(() {
+          _error = 'La biometría no está disponible en este momento.';
+        });
+        return;
+      }
+
+      // Verificar credenciales guardadas
+      final credentials = await AuthService.getSavedCredentials();
+      final savedEmail = credentials['email'];
+      final savedPassword = credentials['password'];
+
+      print('📧 Email guardado: ${savedEmail != null ? "SÍ" : "NO"}');
+      print('🔑 Contraseña guardada: ${savedPassword != null ? "SÍ" : "NO"}');
+
+      if (savedEmail == null || savedPassword == null) {
+        setState(() {
+          _error =
+              'No hay credenciales guardadas. Inicia sesión primero con "Recordarme" activado.';
+        });
+        return;
+      }
+
+      print('🤳 Solicitando autenticación biométrica...');
+
+      // Autenticar con biometría
+      final bool didAuthenticate = await _localAuth.authenticate(
+        localizedReason:
+            'Usa Touch ID o Face ID para iniciar sesión en Tourify',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
+      );
+
+      print('✅ Autenticación biométrica exitosa: $didAuthenticate');
+
+      if (didAuthenticate) {
+        print('🔥 Iniciando sesión con Firebase...');
+
+        // Si la autenticación biométrica es exitosa, hacer login con Firebase
+        final UserCredential userCredential =
+            await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: savedEmail,
+          password: savedPassword,
+        );
+
+        if (mounted && userCredential.user != null) {
+          print('🎉 Login con Face ID exitoso: ${userCredential.user?.email}');
+          Navigator.pushAndRemoveUntil(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const HomeScreen(),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+            (route) => false,
+          );
+        }
+      } else {
+        print('❌ Usuario canceló la autenticación biométrica');
+      }
+    } on FirebaseAuthException catch (e) {
+      print(
+          '❌ Error de Firebase en login con Face ID: ${e.code} - ${e.message}');
+      setState(() {
+        _error = _firebaseErrorMessages[e.code] ??
+            'Error al iniciar sesión: ${e.message}';
+      });
+    } catch (e) {
+      print('❌ Error en autenticación biométrica: $e');
+
+      // Manejo específico de errores de local_auth
+      String errorMessage = 'Error en autenticación biométrica.';
+
+      if (e.toString().contains('UserCancel')) {
+        errorMessage = 'Autenticación cancelada por el usuario.';
+      } else if (e.toString().contains('NotAvailable')) {
+        errorMessage = 'Face ID/Touch ID no está disponible.';
+      } else if (e.toString().contains('NotEnrolled')) {
+        errorMessage =
+            'No hay datos biométricos configurados en el dispositivo.';
+      } else if (e.toString().contains('LockedOut')) {
+        errorMessage =
+            'Face ID/Touch ID está bloqueado. Usa el código del dispositivo.';
+      }
+
+      setState(() {
+        _error = errorMessage;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isBiometricLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadRememberedCredentials() async {
+    try {
+      final bool rememberMe = await AuthService.getRememberMeStatus();
+      if (rememberMe) {
+        final credentials = await AuthService.getSavedCredentials();
+        final savedEmail = credentials['email'];
+
+        if (savedEmail != null) {
+          setState(() {
+            _emailController.text = savedEmail;
+            _rememberMe = true;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error cargando credenciales recordadas: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     print('Construyendo LoginScreen');
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF60A5FA), Color(0xFF2563EB)],
-          ),
+          gradient: AppColors.primaryGradient,
         ),
         child: SafeArea(
           child: Center(
@@ -230,7 +416,42 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ],
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: (value) {
+                                setState(() {
+                                  _rememberMe = value ?? false;
+                                });
+                              },
+                              fillColor: MaterialStateProperty.resolveWith(
+                                (states) {
+                                  if (states.contains(MaterialState.selected)) {
+                                    return Colors.white;
+                                  }
+                                  return Colors.transparent;
+                                },
+                              ),
+                              checkColor: const Color(0xFF2563EB),
+                              side: const BorderSide(
+                                color: Colors.white,
+                                width: 2,
+                              ),
+                            ),
+                            const Expanded(
+                              child: Text(
+                                'Recordar mi sesión',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -333,6 +554,63 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
+                        if (_isBiometricAvailable) ...[
+                          FutureBuilder<bool>(
+                            future: AuthService.hasStoredCredentials(),
+                            builder: (context, snapshot) {
+                              if (snapshot.data == true) {
+                                return Column(
+                                  children: [
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: _isBiometricLoading
+                                            ? null
+                                            : _handleBiometricLogin,
+                                        icon: _isBiometricLoading
+                                            ? const SizedBox(
+                                                width: 24,
+                                                height: 24,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  color: Colors.black87,
+                                                  strokeWidth: 2,
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.face,
+                                                size: 24,
+                                              ),
+                                        label: Text(
+                                          _isBiometricLoading
+                                              ? 'Autenticando...'
+                                              : 'Continuar con biometría',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.white,
+                                          foregroundColor: Colors.black87,
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 12),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          elevation: 0,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                  ],
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ],
                         TextButton(
                           onPressed: () {
                             Navigator.pushAndRemoveUntil(

@@ -3,6 +3,8 @@ import 'package:animations/animations.dart';
 import 'create_guide_modal.dart';
 import 'dart:ui';
 
+import '../../config/app_colors.dart';
+
 class CreateGuideButton extends StatelessWidget {
   final VoidCallback?
       onTap; // Ya no se usará directamente, pero se mantiene por compatibilidad
@@ -55,14 +57,14 @@ class CreateGuideButton extends StatelessWidget {
               border: Border.all(
                 width: 2,
                 style: BorderStyle.solid,
-                color: const Color(0xFF60A5FA),
+                color: AppColors.primaryLight,
               ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.max,
               children: const [
-                Icon(Icons.flight_takeoff, color: Color(0xFF2563EB), size: 22),
+                Icon(Icons.flight_takeoff, color: AppColors.primary, size: 22),
                 SizedBox(width: 12),
                 Text(
                   'Comenzar mi viaje',

@@ -58,7 +58,7 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
         _accessLinks = links;
       });
     } catch (e) {
-      print('Error al cargar links de acceso: $e');
+      // Error silencioso
     }
   }
 
@@ -109,7 +109,6 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
   }
 
   Future<void> _loadCollaborators() async {
-    print('DEBUG: Cargando colaboradores...');
     setState(() {
       _isLoading = true;
       _error = null;
@@ -118,12 +117,10 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
     try {
       final collaboratorsResponse =
           await _collaboratorsService.getCollaborators(widget.guideId);
-      print('DEBUG: Respuesta de colaboradores: $collaboratorsResponse');
 
-      final userRole = (collaboratorsResponse is Map &&
-              collaboratorsResponse['userRole'] is String)
-          ? collaboratorsResponse['userRole'] as String?
-          : null;
+      final userRoleResponse =
+          await _collaboratorsService.getUserRole(widget.guideId);
+
       final collaboratorsList = (collaboratorsResponse is Map &&
               collaboratorsResponse['collaborators'] is List)
           ? (collaboratorsResponse['collaborators'] as List)
@@ -132,13 +129,11 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
           : <Map<String, dynamic>>[];
 
       setState(() {
-        _userRole = userRole;
+        _userRole = userRoleResponse['role'] as String?;
         _collaborators = collaboratorsList;
         _isLoading = false;
       });
-      print('DEBUG: Colaboradores cargados: \\${_collaborators.length}');
     } catch (e) {
-      print('DEBUG: Error al cargar colaboradores: $e');
       setState(() {
         _error = 'Error al cargar colaboradores: $e';
         _isLoading = false;
@@ -249,7 +244,7 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
       case 'owner':
         return 'Propietario';
       case 'editor':
-        return 'Editor';
+        return 'Organizador';
       case 'viewer':
         return 'Acoplado';
       default:
@@ -368,76 +363,6 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
                         ),
                         padding: const EdgeInsets.all(12),
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            height: 48,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 22, vertical: 0),
-                                textStyle: const TextStyle(
-                                    fontSize: 16, fontWeight: FontWeight.w600),
-                                minimumSize: const Size(0, 48),
-                              ),
-                              onPressed: _isGeneratingLink
-                                  ? null
-                                  : _generateAccessLink,
-                              child: _isGeneratingLink
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white),
-                                    )
-                                  : const Text('Generar link'),
-                            ),
-                          ),
-                          const SizedBox(width: 20),
-                          Container(
-                            height: 48,
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedRole,
-                                isDense: true,
-                                style: const TextStyle(
-                                    fontSize: 16, color: Colors.black),
-                                alignment: Alignment.center,
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'viewer',
-                                    child: Text('Acoplado'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'editor',
-                                    child: Text('Organizador'),
-                                  ),
-                                ],
-                                onChanged: _isGeneratingLink
-                                    ? null
-                                    : (value) {
-                                        if (value != null) {
-                                          setState(() => _selectedRole = value);
-                                        }
-                                      },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                       const SizedBox(height: 24),
 
                       // Selección de rol
@@ -466,6 +391,16 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
                         CupertinoIcons.pencil,
                         CupertinoColors.systemBlue,
                       ),
+
+                      const SizedBox(height: 24),
+
+                      // Sección de generar link
+                      _buildGenerateLinkSection(),
+
+                      const SizedBox(height: 32),
+
+                      // Sección de colaboradores actuales
+                      _buildCurrentCollaborators(),
                     ],
                   ),
                 ),
@@ -543,6 +478,344 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildGenerateLinkSection() {
+    return SizedBox(
+      width: double.infinity,
+      child: CupertinoButton(
+        color: CupertinoColors.systemBlue,
+        borderRadius: BorderRadius.circular(12),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        onPressed: _isGeneratingLink ? null : _generateAccessLink,
+        child: _isGeneratingLink
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CupertinoActivityIndicator(color: Colors.white),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Generando link...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    CupertinoIcons.share,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Generar link de ${_getRoleDisplayName(_selectedRole).toLowerCase()}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentCollaborators() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              CupertinoIcons.person_2_fill,
+              color: CupertinoColors.systemBlue.resolveFrom(context),
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Colaboradores actuales',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemBlue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_collaborators.length}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.systemBlue,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_isLoading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(20),
+              child: CupertinoActivityIndicator(),
+            ),
+          )
+        else if (_collaborators.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGrey6.resolveFrom(context),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  CupertinoIcons.person_add,
+                  size: 40,
+                  color: CupertinoColors.systemGrey.resolveFrom(context),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Aún no hay colaboradores',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: CupertinoColors.systemGrey.resolveFrom(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Invita a otros para colaborar en esta guía',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: CupertinoColors.systemGrey2.resolveFrom(context),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemBackground.resolveFrom(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: CupertinoColors.separator.resolveFrom(context),
+                width: 0.5,
+              ),
+            ),
+            child: Column(
+              children: _collaborators.asMap().entries.map((entry) {
+                final index = entry.key;
+                final collaborator = entry.value;
+                final isLast = index == _collaborators.length - 1;
+
+                return _buildCollaboratorItem(collaborator, isLast);
+              }).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCollaboratorItem(
+      Map<String, dynamic> collaborator, bool isLast) {
+    final email = collaborator['email'] as String? ?? 'Email desconocido';
+    final role = collaborator['role'] as String? ?? 'viewer';
+    final displayName = collaborator['displayName'] as String?;
+    final joinedAt = collaborator['joinedAt'] as Timestamp?;
+
+    final roleColor = _getRoleColor(role);
+    final roleIcon = _getRoleIcon(role);
+    final roleDisplayName = _getRoleDisplayName(role);
+    final canRemove = _canManageCollaborators() && role != 'owner';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : Border(
+                bottom: BorderSide(
+                  color: CupertinoColors.separator.resolveFrom(context),
+                  width: 0.5,
+                ),
+              ),
+      ),
+      child: Row(
+        children: [
+          // Avatar
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: roleColor.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Icon(
+              CupertinoIcons.person_fill,
+              color: roleColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Información del colaborador
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (displayName != null && displayName.isNotEmpty) ...[
+                  Text(
+                    displayName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                ],
+                Text(
+                  email,
+                  style: TextStyle(
+                    fontSize: displayName != null ? 14 : 16,
+                    color: displayName != null
+                        ? CupertinoColors.secondaryLabel.resolveFrom(context)
+                        : CupertinoColors.label.resolveFrom(context),
+                    fontWeight: displayName != null
+                        ? FontWeight.normal
+                        : FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: roleColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            roleIcon,
+                            size: 12,
+                            color: roleColor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            roleDisplayName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: roleColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (joinedAt != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        'Desde ${_formatDate(joinedAt.toDate())}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: CupertinoColors.secondaryLabel
+                              .resolveFrom(context),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Botón eliminar (solo para owners y editors, y no para el owner)
+          if (canRemove)
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minSize: 32,
+              onPressed: () => _showRemoveCollaboratorDialog(email),
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: CupertinoColors.systemRed.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  CupertinoIcons.minus_circle_fill,
+                  color: CupertinoColors.systemRed,
+                  size: 18,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays == 0) {
+      return 'hoy';
+    } else if (difference.inDays == 1) {
+      return 'ayer';
+    } else if (difference.inDays < 7) {
+      return 'hace ${difference.inDays} días';
+    } else if (difference.inDays < 30) {
+      final weeks = (difference.inDays / 7).floor();
+      return 'hace ${weeks} semana${weeks > 1 ? 's' : ''}';
+    } else {
+      final months = (difference.inDays / 30).floor();
+      return 'hace ${months} mes${months > 1 ? 'es' : ''}';
+    }
+  }
+
+  void _showRemoveCollaboratorDialog(String email) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Eliminar colaborador'),
+        content: Text(
+            '¿Estás seguro de que quieres eliminar a $email de esta guía?'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('Cancelar'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.of(context).pop();
+              _removeCollaborator(email);
+            },
+            child: const Text('Eliminar'),
+          ),
+        ],
       ),
     );
   }

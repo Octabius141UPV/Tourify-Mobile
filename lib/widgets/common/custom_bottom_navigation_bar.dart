@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
 
 class CustomBottomNavigationBar extends StatelessWidget {
   final int currentIndex;
@@ -16,10 +15,6 @@ class CustomBottomNavigationBar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.15),
@@ -35,45 +30,30 @@ class CustomBottomNavigationBar extends StatelessWidget {
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: BottomNavigationBar(
-            currentIndex: currentIndex,
-            onTap: onTap,
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: Colors.transparent,
-            selectedItemColor: const Color(0xFF2563EB),
-            unselectedItemColor: Colors.grey,
-            elevation: 0,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(
-                  Symbols.home_rounded,
-                  weight: 600,
-                ),
-                label: 'Inicio',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(
-                  Symbols.map_rounded,
-                  weight: 600,
-                ),
-                label: 'Mis viajes',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(
-                  Symbols.person_rounded,
-                  weight: 600,
-                ),
-                label: 'Perfil',
-              ),
-            ],
-          ),
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: BottomNavigationBar(
+          currentIndex: currentIndex,
+          onTap: onTap,
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.transparent,
+          selectedItemColor: const Color(0xFF2563EB),
+          unselectedItemColor: Colors.grey,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_rounded),
+              label: 'Inicio',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.map_rounded),
+              label: 'Mis viajes',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_rounded),
+              label: 'Perfil',
+            ),
+          ],
         ),
       ),
     );

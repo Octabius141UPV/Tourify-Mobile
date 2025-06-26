@@ -14,13 +14,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import 'package:cross_file/cross_file.dart';
-import 'dart:io';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:pdf/pdf.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/collaborators_service.dart';
 import '../services/guide_service.dart';
 import '../services/public_guides_service.dart';
+import 'collaborators_screen.dart';
+import 'premium_subscription_screen.dart';
+import 'dart:io';
 
 class GuideDetailScreen extends StatefulWidget {
   final String guideId;
@@ -52,11 +52,17 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   bool _canEdit = false;
   String? _userRole;
 
+  // Variables para el gesto de swipe
+  double _swipeStartX = 0.0;
+  bool _isSwipeActive = false;
+
   @override
   void initState() {
     super.initState();
-    _loadGuideDetails();
-    _checkEditPermission();
+    _loadGuideDetails().then((_) {
+      // Cargar permisos DESPUÉS de cargar los detalles de la guía
+      _checkEditPermission();
+    });
   }
 
   Future<void> _checkEditPermission() async {
@@ -71,18 +77,34 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     }
 
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      print('DEBUG: Usuario no autenticado');
+      return;
+    }
+
     try {
+      print('DEBUG: Verificando permisos para guía: ${widget.guideId}');
+      print('DEBUG: Usuario ID: ${user.uid}');
+      print('DEBUG: Usuario email: ${user.email}');
+
       final collaboratorsService = CollaboratorsService();
       final roleResponse =
           await collaboratorsService.getUserRole(widget.guideId);
+
+      print('DEBUG: Respuesta del servicio: $roleResponse');
+
       setState(() {
         _userRole = roleResponse['role'] as String?;
-        _canEdit =
-            roleResponse['canEdit'] == true || roleResponse['isOwner'] == true;
         _isOwner = roleResponse['isOwner'] == true;
+        // Tanto el creador (owner) como organizador (editor) pueden editar
+        // Acoplado (viewer) solo puede ver
+        _canEdit = _isOwner || roleResponse['role'] == 'editor';
       });
+
+      print(
+          'DEBUG: Rol final - _userRole: $_userRole, _isOwner: $_isOwner, _canEdit: $_canEdit');
     } catch (e) {
+      print('DEBUG: Error al verificar permisos: $e');
       setState(() {
         _canEdit = false;
         _isOwner = false;
@@ -109,7 +131,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
 
       setState(() {
         _guide = guideData;
-        _isOwner = guideData['isOwner'] ?? false;
         _isLoading = false;
       });
 
@@ -156,34 +177,59 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       isPublic = routeArgs['isPublic'] ?? false;
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      appBar: AppBar(
-        title: Text(guideTitle),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: _downloadGuide,
-            tooltip: 'Descargar guía',
+    return GestureDetector(
+      onPanUpdate: (details) {
+        // Detectar deslizamiento horizontal desde la izquierda
+        if (details.delta.dx > 0 && details.globalPosition.dx < 50) {
+          // Solo procesar si el deslizamiento comienza cerca del borde izquierdo
+          _handleSwipeFromLeft(details);
+        }
+      },
+      onPanEnd: (details) {
+        _handleSwipeEnd(details);
+      },
+      child: PopScope(
+        canPop: false,
+        onPopInvoked: (didPop) {
+          if (!didPop) {
+            _navigateToHome();
+          }
+        },
+        child: Scaffold(
+          backgroundColor: const Color(0xFFF5F5F5),
+          appBar: AppBar(
+            title: Text(guideTitle),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _navigateToHome,
+              tooltip: 'Volver al inicio',
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.download),
+                onPressed: _downloadGuide,
+                tooltip: 'Descargar guía',
+              ),
+            ],
           ),
-        ],
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _guide == null
+                  ? const Center(child: Text('No se encontró la guía'))
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildGuideHeader(),
+                          const SizedBox(height: 16),
+                          _buildDaysSection(),
+                        ],
+                      ),
+                    ),
+          floatingActionButton: _canEdit ? _buildFloatingActionMenu() : null,
+        ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _guide == null
-              ? const Center(child: Text('No se encontró la guía'))
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildGuideHeader(),
-                      const SizedBox(height: 16),
-                      _buildDaysSection(),
-                    ],
-                  ),
-                ),
-      floatingActionButton: _canEdit ? _buildFloatingActionMenu() : null,
     );
   }
 
@@ -218,7 +264,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.all(16),
+      margin: const EdgeInsets.all(8),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -285,8 +331,24 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
 
           const SizedBox(height: 16),
 
-          // Botón gestionar colaboradores - solo mostrar si no es guía predefinida
-          if (!widget.guideId.startsWith('predefined_'))
+          // Botón gestionar colaboradores - solo mostrar para owners y organizadores
+          if (!widget.guideId.startsWith('predefined_') &&
+              (_isOwner || _userRole == 'editor')) ...[
+            // Debug para verificar por qué no aparece
+            Builder(
+              builder: (context) {
+                print('DEBUG: Evaluando botón colaboradores');
+                print('DEBUG: guideId: ${widget.guideId}');
+                print(
+                    'DEBUG: !predefined: ${!widget.guideId.startsWith('predefined_')}');
+                print('DEBUG: _isOwner: $_isOwner');
+                print('DEBUG: _userRole: $_userRole');
+                print('DEBUG: _userRole == editor: ${_userRole == 'editor'}');
+                print(
+                    'DEBUG: Condición final: ${!widget.guideId.startsWith('predefined_') && (_isOwner || _userRole == 'editor')}');
+                return SizedBox.shrink();
+              },
+            ),
             SizedBox(
               width: double.infinity,
               child: GestureDetector(
@@ -322,6 +384,97 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+          ],
+
+          // Botones de exportación Google Maps y Calendar
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Exportar a:',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _exportAllToGoogleMaps,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.green, width: 1.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.map,
+                                color: Colors.green, size: 18),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Maps',
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _exportAllToGoogleCalendar,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border.all(color: Colors.blue, width: 1.5),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.calendar_today,
+                                color: Colors.blue, size: 18),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Calendar',
+                                style: const TextStyle(
+                                  color: Colors.blue,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -330,7 +483,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   Widget _buildDaysSection() {
     if (_guide!['days'].isEmpty) {
       return Container(
-        margin: const EdgeInsets.all(16),
+        margin: const EdgeInsets.all(8),
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -369,7 +522,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
 
   Widget _buildDayCard(Map<String, dynamic> dayData) {
     return Container(
-      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+      margin: const EdgeInsets.only(left: 8, right: 8, bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -519,6 +672,10 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                                 _editActivity(activity);
                               } else if (value == 'delete') {
                                 _deleteActivity(activity);
+                              } else if (value == 'maps') {
+                                _exportToGoogleMaps(activity);
+                              } else if (value == 'calendar') {
+                                _addToGoogleCalendar(activity);
                               }
                             },
                             itemBuilder: (context) => [
@@ -540,6 +697,28 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                                         size: 18, color: Colors.red),
                                     SizedBox(width: 8),
                                     Text('Eliminar'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'maps',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.map,
+                                        size: 18, color: Colors.green),
+                                    SizedBox(width: 8),
+                                    Text('Abrir en Maps'),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'calendar',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.calendar_today,
+                                        size: 18, color: Colors.blue),
+                                    SizedBox(width: 8),
+                                    Text('Añadir a calendario'),
                                   ],
                                 ),
                               ),
@@ -577,23 +756,27 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                         ),
                       ),
                     const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF2196F3),
-                          side: const BorderSide(
-                              color: Color(0xFF2196F3), width: 1.5),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24)),
-                          textStyle: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600),
+                    // Solo mostrar botón de Civitatis para actividades culturales
+                    if (activityObj.category?.toLowerCase() == 'cultural' ||
+                        activityObj.category?.toLowerCase() == 'cultura')
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF2196F3),
+                            side: const BorderSide(
+                                color: Color(0xFF2196F3), width: 1.5),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24)),
+                            textStyle: const TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          icon: const Icon(Icons.confirmation_number, size: 18),
+                          label: const Text('Reservar actividad'),
+                          onPressed: () => _openInCivitatis(activityObj),
                         ),
-                        label: const Text('Ver en Civitatis'),
-                        onPressed: () => _openInCivitatis(activityObj),
                       ),
-                    ),
                     const SizedBox(height: 12),
                   ],
                 ),
@@ -618,130 +801,8 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     return null;
   }
 
-  Future<File> generateGuidePdf({
-    required String title,
-    required String city,
-    required String author,
-    required List<dynamic> dayActivities,
-  }) async {
-    final pdf = pw.Document();
-
-    // Pre-cargar todas las imágenes antes de crear el PDF
-    final Map<String, pw.MemoryImage> imageCache = {};
-    for (final day in dayActivities) {
-      for (final activity in day['activities']) {
-        final imageUrl = _getImageUrl(activity);
-
-        if (imageUrl != null && imageUrl.isNotEmpty) {
-          try {
-            final response = await http.get(Uri.parse(imageUrl));
-            if (response.statusCode == 200) {
-              imageCache[imageUrl] = pw.MemoryImage(response.bodyBytes);
-            }
-          } catch (e) {
-            print('Error al cargar imagen $imageUrl: $e');
-          }
-        }
-      }
-    }
-
-    pdf.addPage(
-      pw.MultiPage(
-        build: (context) => [
-          pw.Header(
-            level: 0,
-            child: pw.Text(title,
-                style:
-                    pw.TextStyle(fontSize: 28, fontWeight: pw.FontWeight.bold)),
-          ),
-          pw.Text('Ciudad: $city', style: pw.TextStyle(fontSize: 18)),
-          pw.Text('Autor: $author', style: pw.TextStyle(fontSize: 16)),
-          pw.SizedBox(height: 16),
-          ...dayActivities.map((day) => pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text('Día ${day['dayNumber']?.toString() ?? '?'}',
-                      style: pw.TextStyle(
-                          fontSize: 20, fontWeight: pw.FontWeight.bold)),
-                  pw.SizedBox(height: 8),
-                  ...day['activities'].map((activity) => pw.Container(
-                        margin: const pw.EdgeInsets.only(bottom: 16),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            // Título de la actividad
-                            pw.Text(
-                                activity['title']?.toString() ??
-                                    activity['name']?.toString() ??
-                                    'Sin título',
-                                style: pw.TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: pw.FontWeight.bold)),
-                            pw.SizedBox(height: 8),
-
-                            // Información básica en una fila
-                            pw.Row(
-                              children: [
-                                if (activity['city'] != null &&
-                                    activity['city'].toString().isNotEmpty)
-                                  pw.Expanded(
-                                    child: pw.Text('${activity['city']}',
-                                        style: pw.TextStyle(
-                                            fontSize: 12,
-                                            color: PdfColors.grey700)),
-                                  ),
-                                if (activity['duration'] != null)
-                                  pw.Text('${activity['duration']} min',
-                                      style: pw.TextStyle(
-                                          fontSize: 12,
-                                          color: PdfColors.grey700)),
-                              ],
-                            ),
-
-                            if (activity['description'] != null &&
-                                activity['description']
-                                    .toString()
-                                    .isNotEmpty) ...[
-                              pw.SizedBox(height: 6),
-                              pw.Text(activity['description'].toString(),
-                                  style: pw.TextStyle(
-                                      fontSize: 12, color: PdfColors.grey800)),
-                            ],
-
-                            // Agregar imagen si está disponible en el cache
-                            if ((() {
-                              final imageUrl = _getImageUrl(activity);
-                              return imageUrl != null &&
-                                  imageCache.containsKey(imageUrl);
-                            })())
-                              pw.Center(
-                                child: pw.Container(
-                                  margin: const pw.EdgeInsets.only(top: 8),
-                                  child: pw.Image(
-                                    imageCache[_getImageUrl(activity)!]!,
-                                    width: 200,
-                                    height: 120,
-                                    fit: pw.BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      )),
-                  pw.Divider(),
-                ],
-              )),
-        ],
-      ),
-    );
-
-    final output = await getTemporaryDirectory();
-    final file = File('${output.path}/guia_tourify.pdf');
-    await file.writeAsBytes(await pdf.save());
-    return file;
-  }
-
-  void _downloadGuide() async {
+  // Descarga la guía como PDF desde el backend
+  Future<void> _downloadGuide() async {
     try {
       if (_guide == null) {
         if (mounted) {
@@ -753,26 +814,54 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
         return;
       }
 
-      final String guideTitle = widget.guideTitle ?? 'Guía sin título';
-      final String? city = _guide?['city']?.toString() ?? 'Destino desconocido';
-      final String author = _guide?['author']?.toString() ?? 'Tourify';
-      final List<dynamic> days = _guide!['days'] ?? [];
+      // Mostrar indicador de carga
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Text('Generando PDF...'),
+              ],
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
 
-      final pdfFile = await generateGuidePdf(
-        title: guideTitle,
-        city: city ?? 'Destino desconocido',
-        author: author,
-        dayActivities: days,
+      // Llamada al backend para generar PDF
+      final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:3000';
+      final response = await http.post(
+        Uri.parse('$baseUrl/guides/${widget.guideId}/export-pdf'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (_auth.currentUser != null)
+            'Authorization': 'Bearer ${await _auth.currentUser!.getIdToken()}',
+        },
       );
 
-      // Usar Share para permitir al usuario elegir dónde guardar
-      await Share.shareXFiles(
-        [XFile(pdfFile.path)],
-        text: 'Guía de viaje: $guideTitle',
-        subject: 'Guía de viaje generada con Tourify',
-      );
+      if (response.statusCode == 200) {
+        // Guardar el PDF temporal para compartir
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/guia_tourify.pdf');
+        await file.writeAsBytes(response.bodyBytes);
 
-      if (mounted) _showDownloadSuccessMessage();
+        // Compartir el PDF
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: 'Guía de viaje: ${widget.guideTitle}',
+          subject: 'Guía de viaje generada con Tourify',
+        );
+
+        if (mounted) _showDownloadSuccessMessage();
+      } else {
+        throw Exception('Error del servidor: ${response.statusCode}');
+      }
     } catch (e) {
       print('Error al descargar la guía como PDF: $e');
       if (mounted) _showDownloadErrorMessage();
@@ -1018,7 +1107,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
             label: 'Deshacer',
             textColor: Colors.white,
             onPressed: () {
-              // TODO: Implementar función de deshacer si es necesario
+              _undoDeleteActivity(activity, targetDay['dayNumber']);
             },
           ),
         ),
@@ -1029,6 +1118,96 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error al eliminar actividad: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _undoDeleteActivity(Map<String, dynamic> activity, int dayNumber) async {
+    try {
+      // Mostrar indicador de carga
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 16),
+              Text('Restaurando actividad...'),
+            ],
+          ),
+          duration: Duration(seconds: 10),
+        ),
+      );
+
+      // Encontrar el día al que pertenece esta actividad
+      dynamic targetDay = _guide!['days'].firstWhere(
+          (day) => day['dayNumber'] == dayNumber,
+          orElse: () => null);
+
+      List<Map<String, dynamic>> updatedActivities;
+
+      if (targetDay != null) {
+        // Añadir la actividad de vuelta al día existente
+        updatedActivities = [
+          ...targetDay['activities'],
+          activity,
+        ];
+      } else {
+        // Crear nuevo día con esta actividad si el día no existe
+        updatedActivities = [activity];
+      }
+
+      // Guardar en Firestore
+      final success = await _updateDayActivities(
+        dayNumber,
+        updatedActivities,
+      );
+
+      if (!success) {
+        throw Exception('Error al restaurar la actividad en el servidor');
+      }
+
+      // Actualizar el estado local
+      setState(() {
+        if (targetDay != null) {
+          // Actualizar día existente
+          final dayIndex =
+              _guide!['days'].indexWhere((d) => d['dayNumber'] == dayNumber);
+          if (dayIndex != -1) {
+            _guide!['days'][dayIndex]['activities'] = updatedActivities;
+          }
+        } else {
+          // Añadir nuevo día
+          _guide!['days'].add({
+            'dayNumber': dayNumber,
+            'activities': updatedActivities,
+          });
+          // Reordenar por número de día
+          _guide!['days']
+              .sort((a, b) => a['dayNumber'].compareTo(b['dayNumber']));
+        }
+      });
+
+      // Ocultar indicador de carga y mostrar éxito
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Actividad "${activity['title']}" restaurada correctamente'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      // Ocultar indicador de carga y mostrar error
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error al restaurar actividad: $e'),
           backgroundColor: Colors.red,
         ),
       );
@@ -1321,6 +1500,36 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     showCollaboratorsModal(context, widget.guideId, widget.guideTitle);
   }
 
+  // Métodos para manejar el gesto de swipe desde la izquierda
+  void _handleSwipeFromLeft(details) {
+    if (!_isSwipeActive && details.globalPosition.dx < 50) {
+      _isSwipeActive = true;
+      _swipeStartX = details.globalPosition.dx;
+    }
+  }
+
+  void _handleSwipeEnd(details) {
+    if (_isSwipeActive) {
+      // Calcular la velocidad del gesto
+      final velocity = details.velocity.pixelsPerSecond.dx;
+
+      // Si la velocidad es suficiente hacia la derecha (>= 500)
+      if (velocity >= 500) {
+        _navigateToHome();
+      }
+
+      _isSwipeActive = false;
+      _swipeStartX = 0.0;
+    }
+  }
+
+  void _navigateToHome() {
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/home',
+      (route) => false,
+    );
+  }
+
   Widget _buildFloatingActionMenu() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1335,6 +1544,26 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
             child: _isMenuExpanded
                 ? Column(
                     children: [
+                      // Botón Agente de Viaje IA
+                      Tooltip(
+                        message: 'Agente de viaje IA',
+                        child: _buildCircularButton(
+                          onTap: _openTravelAgent,
+                          size: 56,
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF42A5F5), // Azul claro
+                              Color(0xFF1565C0), // Azul oscuro
+                            ],
+                          ),
+                          shadowColor: Colors.blue,
+                          icon: Icons.smart_toy,
+                          iconSize: 24,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       // Botón Ordenar Actividades
                       Tooltip(
                         message: 'Organizar actividades',
@@ -1386,15 +1615,24 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
           child: _buildCircularButton(
             onTap: _toggleMenu,
             size: 64,
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF2196F3), // Azul claro
-                Color(0xFF0D47A1), // Azul profundo
-              ],
-            ),
-            shadowColor: Colors.blue,
+            gradient: _isMenuExpanded
+                ? const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFFE53935), // Rojo claro
+                      Color(0xFFB71C1C), // Rojo oscuro
+                    ],
+                  )
+                : const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF2196F3), // Azul claro
+                      Color(0xFF0D47A1), // Azul profundo
+                    ],
+                  ),
+            shadowColor: _isMenuExpanded ? Colors.red : Colors.blue,
             icon: _isMenuExpanded ? Icons.close : Icons.more_vert,
             iconSize: 28,
           ),
@@ -1443,6 +1681,58 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
               child: Icon(
                 icon,
                 color: Colors.white,
+                size: iconSize,
+                key: ValueKey(icon),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCircularButtonWithBorder({
+    required VoidCallback onTap,
+    required double size,
+    required IconData icon,
+    required double iconSize,
+  }) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        border: Border.all(
+          color: Colors.black,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(size / 2),
+          onTap: onTap,
+          splashColor: Colors.black.withOpacity(0.1),
+          highlightColor: Colors.black.withOpacity(0.05),
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: Icon(
+                icon,
+                color: Colors.black,
                 size: iconSize,
                 key: ValueKey(icon),
               ),
@@ -1619,5 +1909,389 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
         );
       }
     }
+  }
+
+  void _openTravelAgent() {
+    _startTravelAgentChat();
+  }
+
+  void _startTravelAgentChat() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0062FF), Color(0xFF0046CC)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.workspace_premium,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Tourify Premium',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0062FF),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0062FF), Color(0xFF0046CC)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Column(
+                children: [
+                  Text(
+                    '5€',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'al mes',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Desbloquea funciones premium:',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF0062FF),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildPremiumFeature(
+              Icons.smart_toy,
+              'Asistente de viaje',
+              'Ayuda instantánea durante tu viaje',
+            ),
+            const SizedBox(height: 8),
+            _buildPremiumFeature(
+              Icons.cloud_off,
+              'Uso sin conexión',
+              'Accede a tus guías sin internet',
+            ),
+            const SizedBox(height: 8),
+            _buildPremiumFeature(
+              Icons.map,
+              'Exportación a Google Maps',
+              'Exporta tu itinerario directamente a Maps',
+            ),
+            const SizedBox(height: 8),
+            _buildPremiumFeature(
+              Icons.calendar_today,
+              'Exportación a Google Calendar',
+              'Sincroniza tus actividades con tu calendario',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Más tarde',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showComingSoonModal();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD700),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(25),
+              ),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.workspace_premium, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Suscribirse',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showComingSoonModal() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0062FF), Color(0xFF0046CC)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.rocket_launch,
+                color: Colors.white,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Próximamente',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF0062FF),
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFFFFD700), Color(0xFFFFA000)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Column(
+                children: [
+                  Text(
+                    '🎉 PRIMER MES',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'GRATIS',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Estamos trabajando en funciones increíbles para Tourify Premium:',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF0062FF),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildPremiumFeature(
+              Icons.smart_toy,
+              'Asistente de viaje con IA',
+              'Ayuda instantánea durante tu viaje',
+            ),
+            const SizedBox(height: 8),
+            _buildPremiumFeature(
+              Icons.cloud_off,
+              'Uso sin conexión',
+              'Accede a tus guías sin internet',
+            ),
+            const SizedBox(height: 8),
+            _buildPremiumFeature(
+              Icons.map,
+              'Exportación a Google Maps',
+              'Exporta tu itinerario directamente a Maps',
+            ),
+            const SizedBox(height: 8),
+            _buildPremiumFeature(
+              Icons.calendar_today,
+              'Sincronización con calendario',
+              'Conecta tus viajes con tu agenda',
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.blue.withOpacity(0.3),
+                ),
+              ),
+              child: const Text(
+                '¡Te notificaremos cuando esté disponible y tendrás tu primer mes completamente gratis!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF0062FF),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Entendido',
+              style: TextStyle(
+                color: Color(0xFF0062FF),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPremiumFeature(IconData icon, String title, String description) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0062FF).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(
+            icon,
+            color: const Color(0xFF0062FF),
+            size: 16,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                description,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _processPremiumSubscription() {
+    // TODO: Implementar lógica de suscripción premium
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Icon(
+                Icons.workspace_premium,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Redirigiendo al proceso de suscripción...',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFFFD700),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  // Funciones fake para Google Maps y Calendar
+  void _exportToGoogleMaps(Map<String, dynamic> activity) {
+    _startTravelAgentChat();
+  }
+
+  void _addToGoogleCalendar(Map<String, dynamic> activity) {
+    _startTravelAgentChat();
+  }
+
+  void _exportAllToGoogleMaps() {
+    _startTravelAgentChat();
+  }
+
+  void _exportAllToGoogleCalendar() {
+    _startTravelAgentChat();
   }
 }

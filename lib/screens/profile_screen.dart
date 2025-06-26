@@ -137,17 +137,117 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _handleLogout() async {
-    try {
-      await AuthService.signOut();
-      // Navegar a la pantalla de login directamente y limpiar el historial
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-        (route) => false,
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cerrar sesión: $e')),
-      );
+    // Mostrar diálogo de confirmación
+    final bool? shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.logout,
+                color: Colors.red,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Cerrar sesión'),
+          ],
+        ),
+        content: const Text(
+          '¿Estás seguro de que quieres cerrar sesión?\n\nTendrás que volver a iniciar sesión para acceder a tu perfil y guías.',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Cerrar sesión',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // Si el usuario confirmó, proceder con el cierre de sesión
+    if (shouldLogout == true) {
+      try {
+        // Mostrar indicador de carga
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Text('Cerrando sesión...'),
+              ],
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        await AuthService.signOutAndClearRememberMe();
+
+        // Ocultar el snackbar de carga
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        // Navegar a la pantalla de login directamente y limpiar el historial
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (route) => false,
+        );
+      } catch (e) {
+        // Ocultar el snackbar de carga
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error al cerrar sesión: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -448,7 +548,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: OutlinedButton(
+                                      child: _buildStyledButton(
                                         onPressed: () {
                                           setState(() {
                                             _isEditing = false;
@@ -461,21 +561,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                 userData['location'];
                                           });
                                         },
-                                        child: const Text('Cancelar'),
+                                        icon: Icons.cancel,
+                                        label: 'Cancelar',
+                                        isSecondary: true,
                                       ),
                                     ),
                                     const SizedBox(width: 16),
                                     Expanded(
-                                      child: ElevatedButton.icon(
+                                      child: _buildStyledButton(
                                         onPressed: _isLoading
                                             ? null
                                             : () => _handleSave(user, userData),
-                                        icon: const Icon(Icons.save),
-                                        label: const Text('Guardar'),
-                                        style: ElevatedButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 16),
-                                        ),
+                                        icon: Icons.save,
+                                        label: 'Guardar',
+                                        isSecondary: false,
                                       ),
                                     ),
                                   ],
@@ -486,35 +585,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ] else ...[
                           SizedBox(
                             width: double.infinity,
-                            child: ElevatedButton.icon(
+                            child: _buildStyledButton(
                               onPressed: () {
                                 setState(() {
                                   _isEditing = true;
                                 });
                               },
-                              icon: const Icon(Icons.edit),
-                              label: const Text('Editar perfil'),
-                              style: ElevatedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
-                              ),
+                              icon: Icons.edit,
+                              label: 'Editar perfil',
+                              isSecondary: false,
                             ),
                           ),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
-                            child: OutlinedButton.icon(
+                            child: _buildStyledButton(
                               onPressed: _handleLogout,
-                              icon: const Icon(Icons.logout, color: Colors.red),
-                              label: const Text(
-                                'Cerrar sesión',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
-                                side: const BorderSide(color: Colors.red),
-                              ),
+                              icon: Icons.logout,
+                              label: 'Cerrar sesión',
+                              isSecondary: true,
+                              isDangerous: true,
                             ),
                           ),
                         ],
@@ -548,6 +638,111 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // Método para crear botones con el mismo estilo que guide_detail_screen.dart
+  Widget _buildStyledButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required bool isSecondary,
+    bool isDangerous = false,
+  }) {
+    final LinearGradient gradient;
+    final Color shadowColor;
+    final Color iconColor;
+    final Color textColor;
+
+    if (isDangerous) {
+      gradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFE57373), // Rojo claro
+          Color(0xFFD32F2F), // Rojo oscuro
+        ],
+      );
+      shadowColor = Colors.red;
+      iconColor = Colors.white;
+      textColor = Colors.white;
+    } else if (isSecondary) {
+      gradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFE0E0E0), // Gris claro
+          Color(0xFFBDBDBD), // Gris más oscuro
+        ],
+      );
+      shadowColor = Colors.grey;
+      iconColor = Colors.black87;
+      textColor = Colors.black87;
+    } else {
+      gradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFF2196F3), // Azul claro
+          Color(0xFF0D47A1), // Azul profundo
+        ],
+      );
+      shadowColor = Colors.blue;
+      iconColor = Colors.white;
+      textColor = Colors.white;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: onPressed != null ? gradient : null,
+        color: onPressed == null ? Colors.grey[300] : null,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: onPressed != null
+            ? [
+                BoxShadow(
+                  color: shadowColor.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: shadowColor.withOpacity(0.1),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onPressed,
+          splashColor: Colors.white.withOpacity(0.3),
+          highlightColor: Colors.white.withOpacity(0.1),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: onPressed != null ? iconColor : Colors.grey,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: onPressed != null ? textColor : Colors.grey,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLoginScreen(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -562,8 +757,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 width: 120,
                 height: 120,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2E8B57),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF2196F3), // Azul claro
+                      Color(0xFF0D47A1), // Azul profundo
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(60),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withOpacity(0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
                 ),
                 child: const Icon(
                   Icons.person,
@@ -599,44 +808,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // Botón de iniciar sesión
               SizedBox(
                 width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
+                child: _buildStyledButton(
                   onPressed: () => _navigateToLogin(context),
-                  icon: const Icon(
-                    Icons.login,
-                    color: Colors.white,
-                  ),
-                  label: const Text(
-                    'Iniciar sesión',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2E8B57),
-                    foregroundColor: Colors.white,
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  icon: Icons.login,
+                  label: 'Iniciar sesión',
+                  isSecondary: false,
                 ),
               ),
               const SizedBox(height: 24),
 
               // Botón para continuar sin cuenta
-              TextButton(
-                onPressed: () {
+              GestureDetector(
+                onTap: () {
                   NavigationService.navigateToMainScreen('/home');
                 },
-                child: const Text(
-                  'Continuar sin cuenta',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.black54,
-                    decoration: TextDecoration.underline,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: const Text(
+                    'Continuar sin cuenta',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black54,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 ),
               ),

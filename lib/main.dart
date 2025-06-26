@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
+// import 'package:flutter_smartlook/flutter_smartlook.dart';  // Temporalmente comentado
 import 'config/firebase_config.dart';
+import 'config/app_colors.dart';
 import 'services/navigation_service.dart';
+import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/verify_email_screen.dart';
@@ -14,7 +19,7 @@ import 'screens/my_guides_screen.dart';
 import 'screens/guide_detail_screen.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
-import 'dart:io';
+import 'package:flutter/rendering.dart';
 
 void main() async {
   try {
@@ -47,6 +52,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   StreamSubscription? _linkSubscription;
   late final AppLinks _appLinks;
+  // final Smartlook smartlook = Smartlook.instance;
 
   @override
   void initState() {
@@ -57,11 +63,14 @@ class _MyAppState extends State<MyApp> {
   Future<void> _initAppLinks() async {
     _appLinks = AppLinks();
     // Escuchar links en segundo plano
-    _linkSubscription = _appLinks.uriLinkStream.listen((Uri? uri) {
-      _handleIncomingLink(uri?.toString());
-    }, onError: (err) {
-      print('Error al escuchar links: $err');
-    });
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      (Uri? uri) {
+        _handleIncomingLink(uri?.toString());
+      },
+      onError: (err) {
+        print('Error al escuchar links: $err');
+      },
+    );
 
     // Manejar link inicial si la app se abrió desde un link
     try {
@@ -119,13 +128,17 @@ class _MyAppState extends State<MyApp> {
       navigatorKey: NavigationService.navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: AppColors.primary,
           brightness: Brightness.light,
         ),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
           centerTitle: true,
           elevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: Colors.black87,
+          surfaceTintColor: Colors.transparent,
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
         ),
         // Configurar transiciones personalizadas para eliminar el slide
         pageTransitionsTheme: const PageTransitionsTheme(
@@ -143,10 +156,8 @@ class _MyAppState extends State<MyApp> {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('es', 'ES'),
-      ],
-      initialRoute: '/login',
+      supportedLocales: const [Locale('es', 'ES')],
+      home: const AuthChecker(),
       onGenerateRoute: (settings) {
         // Configurar rutas con transiciones personalizadas
         Widget page;
@@ -176,13 +187,10 @@ class _MyAppState extends State<MyApp> {
             final args = settings.arguments as Map<String, dynamic>?;
             final guideId = args?['guideId'] ?? '';
             final guideTitle = args?['guideTitle'] ?? 'Guía';
-            page = GuideDetailScreen(
-              guideId: guideId,
-              guideTitle: guideTitle,
-            );
+            page = GuideDetailScreen(guideId: guideId, guideTitle: guideTitle);
             break;
           default:
-            page = const LoginScreen();
+            page = const AuthChecker();
         }
 
         return PageRouteBuilder(
@@ -192,6 +200,57 @@ class _MyAppState extends State<MyApp> {
           reverseTransitionDuration: Duration.zero,
         );
       },
+    );
+  }
+}
+
+// Widget para verificar autenticación
+class AuthChecker extends StatefulWidget {
+  const AuthChecker({super.key});
+
+  @override
+  State<AuthChecker> createState() => _AuthCheckerState();
+}
+
+class _AuthCheckerState extends State<AuthChecker> {
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthStatus();
+  }
+
+  Future<void> _checkAuthStatus() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final shouldRemember = await AuthService.shouldRememberUser();
+
+      if (mounted) {
+        if (user != null && shouldRemember) {
+          // Usuario logueado y quiere recordar sesión
+          Navigator.pushReplacementNamed(context, '/home');
+        } else {
+          // No hay usuario o no quiere recordar sesión
+          if (user != null && !shouldRemember) {
+            // Cerrar sesión si no quiere recordar
+            await AuthService.signOut();
+          }
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+      }
+    } catch (e) {
+      print('Error verificando estado de autenticación: $e');
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Widget transparente para que se vea el native splash
+    return const Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SizedBox.shrink(),
     );
   }
 }

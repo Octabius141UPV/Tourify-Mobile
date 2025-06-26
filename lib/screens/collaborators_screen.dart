@@ -32,8 +32,6 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
   @override
   void initState() {
     super.initState();
-    print(
-        'DEBUG: Inicializando CollaboratorsScreen para guía: ${widget.guideId}');
     _tabController = TabController(length: 2, vsync: this);
     _loadCollaborators();
   }
@@ -46,7 +44,6 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
   }
 
   Future<void> _loadCollaborators() async {
-    print('DEBUG: Cargando colaboradores...');
     setState(() {
       _isLoading = true;
       _error = null;
@@ -55,29 +52,19 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
     try {
       final collaboratorsResponse =
           await _collaboratorsService.getCollaborators(widget.guideId);
-      print('DEBUG: Respuesta de colaboradores: $collaboratorsResponse');
 
-      // Obtener rol del usuario actual
-      final user = _auth.currentUser;
-      if (user != null) {
-        final userRoleResponse =
-            await _collaboratorsService.getUserRole(widget.guideId);
-        print('DEBUG: Respuesta de rol de usuario: $userRoleResponse');
-        setState(() {
-          _userRole = userRoleResponse['role'] as String?;
-        });
-      }
+      final userRoleResponse =
+          await _collaboratorsService.getUserRole(widget.guideId);
 
       setState(() {
+        _userRole = userRoleResponse['role'] as String?;
         _collaborators =
             (collaboratorsResponse['collaborators'] as List<dynamic>?)
                     ?.cast<Map<String, dynamic>>() ??
                 [];
         _isLoading = false;
       });
-      print('DEBUG: Colaboradores cargados: ${_collaborators.length}');
     } catch (e) {
-      print('DEBUG: Error al cargar colaboradores: $e');
       setState(() {
         _error = 'Error al cargar colaboradores: $e';
         _isLoading = false;
@@ -223,7 +210,7 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
                       ),
                     )
                   : Text(
-                      'Agregar como ${role == 'editor' ? 'Editor' : 'Visualizador'}'),
+                      'Agregar como ${role == 'editor' ? 'Organizador' : 'Acoplado'}'),
             ),
           ),
           if (_error != null) ...[
@@ -254,7 +241,7 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              'No hay ${role == 'editor' ? 'editores' : 'visualizadores'} aún',
+              'No hay ${role == 'editor' ? 'organizadores' : 'acoplados'} aún',
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[600],
@@ -264,8 +251,8 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
             const SizedBox(height: 8),
             Text(
               role == 'editor'
-                  ? 'Los editores pueden modificar la guía'
-                  : 'Los visualizadores solo pueden ver la guía',
+                  ? 'Los organizadores pueden modificar la guía'
+                  : 'Los acoplados solo pueden ver la guía',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.grey[500],
@@ -359,9 +346,9 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
       case 'owner':
         return 'Propietario';
       case 'editor':
-        return 'Editor';
+        return 'Organizador';
       case 'viewer':
-        return 'Visualizador';
+        return 'Acoplado';
       default:
         return 'Rol desconocido';
     }
@@ -371,9 +358,10 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Gestionar Colaboradores'),
-        backgroundColor: const Color(0xFF2196F3),
-        foregroundColor: Colors.white,
+        title: Text('Colaboradores - ${widget.guideTitle}'),
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.black87,
+        elevation: 0,
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -382,12 +370,12 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
           tabs: [
             Tab(
               icon: const Icon(Icons.edit),
-              text: 'Editores (${_getCollaboratorsByRole('editor').length})',
+              text:
+                  'Organizadores (${_getCollaboratorsByRole('editor').length})',
             ),
             Tab(
               icon: const Icon(Icons.visibility),
-              text:
-                  'Visualizadores (${_getCollaboratorsByRole('viewer').length})',
+              text: 'Acoplados (${_getCollaboratorsByRole('viewer').length})',
             ),
           ],
         ),
@@ -407,7 +395,7 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
                     ],
                   ),
                 ),
-                // Tab de Visualizadores
+                // Tab de Acoplados
                 SingleChildScrollView(
                   child: Column(
                     children: [

@@ -90,9 +90,8 @@ class _AddActivityDialogState extends State<AddActivityDialog> {
       // Crear la nueva actividad con los datos de la API
       final newActivity = Activity(
         id: 'activity-${DateTime.now().millisecondsSinceEpoch}-${_selectedPlace!.placeId.hashCode}',
-        title: responseData['title'] ??
-            _selectedPlace!.description ??
-            _searchController.text,
+        title: _getSafeTitle(
+            responseData, _selectedPlace!, _searchController.text),
         description: responseData['description'] ?? '',
         duration: _parseDuration(responseData['duration']) ?? 60,
         day: widget.dayNumber,
@@ -126,6 +125,30 @@ class _AddActivityDialogState extends State<AddActivityDialog> {
         });
       }
     }
+  }
+
+  String _getSafeTitle(Map<String, dynamic> responseData,
+      Prediction? selectedPlace, String searchText) {
+    // Intentar obtener el título de la respuesta de la API
+    final apiTitle = responseData['title']?.toString().trim();
+    if (apiTitle != null && apiTitle.isNotEmpty) {
+      return apiTitle;
+    }
+
+    // Si no hay título de la API, usar la descripción del lugar seleccionado
+    final placeTitle = selectedPlace?.description?.trim();
+    if (placeTitle != null && placeTitle.isNotEmpty) {
+      return placeTitle;
+    }
+
+    // Como último recurso, usar el texto de búsqueda
+    final searchTitle = searchText.trim();
+    if (searchTitle.isNotEmpty) {
+      return searchTitle;
+    }
+
+    // Si todo falla, usar un título por defecto
+    return 'Actividad sin título';
   }
 
   int? _parseDuration(dynamic duration) {

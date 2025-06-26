@@ -29,8 +29,7 @@ class CollaboratorsService {
         },
       );
 
-      print('Status: \\${response.statusCode}');
-      print('Body: \\${response.body}');
+      // Debug info removed for performance
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -48,7 +47,7 @@ class CollaboratorsService {
             'Error al obtener colaboradores: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error en getCollaborators: $e');
+      // Error silencioso
 
       // Fallback a Firestore si el servidor no está disponible
       try {
@@ -63,7 +62,7 @@ class CollaboratorsService {
           };
         }
       } catch (firestoreError) {
-        print('Error en Firestore fallback: $firestoreError');
+        // Error silencioso
       }
 
       return {
@@ -115,7 +114,7 @@ class CollaboratorsService {
         };
       }
     } catch (e) {
-      print('Error en addCollaborator: $e');
+      // Error silencioso
 
       // Fallback a Firestore
       try {
@@ -154,7 +153,7 @@ class CollaboratorsService {
           throw Exception('Guía no encontrada');
         }
       } catch (firestoreError) {
-        print('Error en Firestore fallback: $firestoreError');
+        // Error silencioso
         return {
           'success': false,
           'error':
@@ -201,7 +200,7 @@ class CollaboratorsService {
         };
       }
     } catch (e) {
-      print('Error en removeCollaborator: $e');
+      // Error silencioso
 
       // Fallback a Firestore
       try {
@@ -226,7 +225,7 @@ class CollaboratorsService {
           throw Exception('Guía no encontrada');
         }
       } catch (firestoreError) {
-        print('Error en Firestore fallback: $firestoreError');
+        // Error silencioso
         return {
           'success': false,
           'error':
@@ -246,14 +245,49 @@ class CollaboratorsService {
       final doc = await _firestore.collection('guides').doc(guideId).get();
       if (doc.exists && doc.data() != null) {
         final data = doc.data() as Map<String, dynamic>;
-        final String ownerId = data['userId'] ?? '';
         final List<dynamic> collaborators = data['collaborators'] ?? [];
-
         final String currentUserId = user.uid;
         final String? currentUserEmail = user.email;
 
-        // Verificar si es el propietario
-        if (ownerId == currentUserId) {
+        // Verificar también si hay colaboradores en subcolección
+        try {
+          final collaboratorsSubcollection = await _firestore
+              .collection('guides')
+              .doc(guideId)
+              .collection('collaborators')
+              .get();
+        } catch (e) {
+          // Error silencioso
+        }
+
+        // Verificar si es el propietario - 3 formas diferentes:
+        bool isOwner = false;
+
+        // 1. Verificar por userId (String)
+        if (data['userId'] == currentUserId) {
+          isOwner = true;
+        }
+
+        // 2. Verificar por authorId (String) - guías antiguas
+        if (!isOwner && data['authorId'] == currentUserId) {
+          isOwner = true;
+        }
+
+        // 3. Verificar por userRef (DocumentReference) - guías más recientes
+        if (!isOwner && data['userRef'] != null) {
+          try {
+            final userRef = data['userRef'] as DocumentReference;
+            final expectedUserRef =
+                _firestore.collection('users').doc(currentUserId);
+            if (userRef.path == expectedUserRef.path) {
+              isOwner = true;
+            }
+          } catch (e) {
+            // Error silencioso
+          }
+        }
+
+        if (isOwner) {
           return {
             'success': true,
             'role': 'owner',
@@ -262,8 +296,9 @@ class CollaboratorsService {
           };
         }
 
-        // Verificar en colaboradores
+        // Verificar en colaboradores - TANTO en array como en subcolección
         if (currentUserEmail != null) {
+          // 1. Verificar en el array principal
           final collaborator = collaborators.firstWhere(
             (collab) => collab['email'] == currentUserEmail,
             orElse: () => null,
@@ -277,6 +312,31 @@ class CollaboratorsService {
               'canEdit': role == 'editor',
               'isOwner': false,
             };
+          }
+
+          // 2. Si no está en el array, verificar en la subcolección
+          try {
+            final collaboratorsSubcollection = await _firestore
+                .collection('guides')
+                .doc(guideId)
+                .collection('collaborators')
+                .where('email', isEqualTo: currentUserEmail)
+                .limit(1)
+                .get();
+
+            if (collaboratorsSubcollection.docs.isNotEmpty) {
+              final subcollectionData =
+                  collaboratorsSubcollection.docs.first.data();
+              final String role = subcollectionData['role'] ?? 'viewer';
+              return {
+                'success': true,
+                'role': role,
+                'canEdit': role == 'editor',
+                'isOwner': false,
+              };
+            }
+          } catch (e) {
+            // Error silencioso
           }
         }
 
@@ -297,7 +357,6 @@ class CollaboratorsService {
         };
       }
     } catch (e) {
-      print('Error en getUserRole: $e');
       return {
         'success': false,
         'error': e.toString(),
@@ -324,10 +383,26 @@ class CollaboratorsService {
       }
 
       final guideData = guideDoc.data()!;
-      final String ownerId = guideData['userId'] ?? '';
 
-      // Verificar si el usuario es el propietario
-      if (ownerId != user.uid) {
+      // Verificar si el usuario es el propietario usando la misma lógica que getUserRole
+      bool isOwner = false;
+      if (guideData['userId'] == user.uid) {
+        isOwner = true;
+      } else if (guideData['authorId'] == user.uid) {
+        isOwner = true;
+      } else if (guideData['userRef'] != null) {
+        try {
+          final userRef = guideData['userRef'] as DocumentReference;
+          final expectedUserRef = _firestore.collection('users').doc(user.uid);
+          if (userRef.path == expectedUserRef.path) {
+            isOwner = true;
+          }
+        } catch (e) {
+          // Error silencioso
+        }
+      }
+
+      if (!isOwner) {
         throw Exception('No tienes permisos para generar links de acceso');
       }
 
@@ -360,7 +435,7 @@ class CollaboratorsService {
         'expiresAt': expiresAt,
       };
     } catch (e) {
-      print('Error al generar link de acceso: $e');
+      // Error silencioso
       rethrow;
     }
   }
@@ -407,7 +482,7 @@ class CollaboratorsService {
 
       return true;
     } catch (e) {
-      print('Error al verificar link de acceso: $e');
+      // Error silencioso
       return false;
     }
   }
@@ -447,7 +522,7 @@ class CollaboratorsService {
         };
       }).toList();
     } catch (e) {
-      print('Error al obtener links de acceso: $e');
+      // Error silencioso
       rethrow;
     }
   }
@@ -479,7 +554,7 @@ class CollaboratorsService {
           .doc(token)
           .update({'isActive': false});
     } catch (e) {
-      print('Error al revocar link de acceso: $e');
+      // Error silencioso
       rethrow;
     }
   }

@@ -3,7 +3,6 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:flutter/cupertino.dart';
 import 'dart:io';
 import 'package:google_places_flutter/google_places_flutter.dart';
-import 'package:google_maps_webservice/places.dart' as places;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:tourify_flutter/screens/discover_screen.dart';
 
@@ -1102,6 +1101,21 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
       );
       _goToSection('when');
       return false;
+    }
+
+    // Validar que no se superen los 7 días
+    if (_startDate != null && _endDate != null) {
+      final daysSelected = _endDate!.difference(_startDate!).inDays + 1;
+      if (daysSelected > 7) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No puedes crear una guía de más de 7 días'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        _goToSection('when');
+        return false;
+      }
     }
 
     if (_guideNameController.text.trim().isEmpty) {

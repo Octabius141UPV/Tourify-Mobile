@@ -33,12 +33,10 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   cupertino_icons: ^1.0.2
-  material_symbols_icons: ^4.2778.0
   firebase_core: ^3.14.0
   firebase_auth: ^5.6.0
   cloud_firestore: ^5.6.9
   google_maps_flutter: ^2.5.0
-  google_maps_webservice: ^0.0.20-nullsafety.5
   google_places_flutter: ^2.1.0
   geolocator: ^14.0.1
   geocoding: ^4.0.0
@@ -56,21 +54,15 @@ dependencies:
   app_links: ^3.4.2
   provider: ^6.1.2
   shared_preferences: ^2.2.2
-  flutter_screenutil: ^5.9.0
   flutter_svg: ^2.0.9
-  easy_localization: ^3.0.3
-  sqflite: ^2.3.2
-  webview_flutter: ^4.7.0
-
-  # Dependencias específicas para resolver conflictos
-  googleapis: ^13.1.0
+  
+  # Dependencias específicas para resolver conflictos  
   device_info_plus: ^11.4.0
   crypto: ^3.0.6
 
-  # Nuevas dependencias
-  pdf: ^3.10.4
-  printing: ^5.11.0
+  # Solo mantener las realmente necesarias
   path_provider: ^2.1.2
+  local_auth: ^2.1.6
 
 dev_dependencies:
   flutter_test:
@@ -101,7 +93,9 @@ flutter:
     - .env
     - assets/icon.png
     - assets/images/
-    - assets/fonts/
+
+  # Optimización: generar solo iconos necesarios para reducir tamaño
+  generate: true
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images-
@@ -114,15 +108,15 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
-  fonts:
-    - family: Poppins
-      fonts:
-        - asset: assets/fonts/Poppins-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Poppins-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Poppins-Medium.ttf
-          weight: 500
+  # fonts:
+  #   - family: Poppins
+  #     fonts:
+  #       - asset: assets/fonts/Poppins-Regular.ttf
+  #         weight: 400
+  #       - asset: assets/fonts/Poppins-Bold.ttf
+  #         weight: 700
+  #       - asset: assets/fonts/Poppins-Medium.ttf
+  #         weight: 500
   #     fonts:
   #       - asset: fonts/TrajanPro.ttf
   #       - asset: fonts/TrajanPro_Bold.ttf
@@ -137,14 +131,14 @@ flutter_launcher_icons:
   image_path: "assets/icon.png"
   min_sdk_android: 21
   remove_alpha_ios: true
-  background_color_ios: "#2196F3"
-  adaptive_icon_background: "#2196F3"
+  background_color_ios: "#0062FF"
+  adaptive_icon_background: "#0062FF"
   adaptive_icon_foreground: "assets/icon.png"
   web:
     generate: true
     image_path: "assets/icon.png"
-    background_color: "#2196F3"
-    theme_color: "#2196F3"
+    background_color: "#0062FF"
+    theme_color: "#0062FF"
   windows:
     generate: true
     image_path: "assets/icon.png"
@@ -154,7 +148,10 @@ flutter_launcher_icons:
     image_path: "assets/icon.png"
 
 flutter_native_splash:
-  color: "#2196F3" # Color de fondo
+  color: "#0062FF" # Color de fondo
   image: assets/icon.png # Ruta a tu icono
   android: true
   ios: true
+  android_12:
+    image: assets/icon.png
+    color: "#0062FF"

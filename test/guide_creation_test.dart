@@ -16,7 +16,7 @@ void main() {
       final activities = mockActivities.take(5).toList();
       final destination = 'París';
       final startDate = DateTime.now();
-      final endDate = DateTime.now().add(const Duration(days: 3));
+      final endDate = DateTime.now().add(const Duration(days: 7));
 
       expect(activities.length, 5);
       expect(destination.isNotEmpty, true);

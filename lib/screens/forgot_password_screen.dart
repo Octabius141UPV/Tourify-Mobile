@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:tourify_flutter/screens/login_screen.dart';
+
+import '../config/app_colors.dart';
+import '../services/auth_service.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -56,12 +60,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Color(0xFF60A5FA), Color(0xFF2563EB)],
-          ),
+        decoration: BoxDecoration(
+          gradient: AppColors.primaryGradient,
         ),
         child: SafeArea(
           child: Center(

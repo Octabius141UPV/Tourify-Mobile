@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -176,6 +177,111 @@ class AuthService {
     } catch (e) {
       print('Error getting user data: $e');
       return null;
+    }
+  }
+
+  // ========== REMEMBER ME FUNCTIONALITY ==========
+
+  // Save credentials for remember me functionality
+  static Future<void> saveCredentialsForRememberMe(
+      String email, String password) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('saved_email', email);
+      await prefs.setString('saved_password', password);
+    } catch (e) {
+      print('Error guardando credenciales: $e');
+    }
+  }
+
+  // Save remember me status
+  static Future<void> saveRememberMeStatus(bool remember) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('remember_me', remember);
+    } catch (e) {
+      print('Error guardando estado de recordar: $e');
+    }
+  }
+
+  // Get remember me status
+  static Future<bool> getRememberMeStatus() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('remember_me') ?? false;
+    } catch (e) {
+      print('Error obteniendo estado de recordar: $e');
+      return false;
+    }
+  }
+
+  // Get saved credentials
+  static Future<Map<String, String?>> getSavedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return {
+        'email': prefs.getString('saved_email'),
+        'password': prefs.getString('saved_password'),
+      };
+    } catch (e) {
+      print('Error obteniendo credenciales guardadas: $e');
+      return {'email': null, 'password': null};
+    }
+  }
+
+  // Check if user should be remembered
+  static Future<bool> shouldRememberUser() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool('remember_me') ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Check if has valid session (user logged + remember me active)
+  static Future<bool> hasValidSession() async {
+    try {
+      final user = _auth.currentUser;
+      final shouldRemember = await shouldRememberUser();
+
+      return user != null && shouldRemember;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Clear all remembered credentials and status
+  static Future<void> clearRememberedCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('saved_email');
+      await prefs.remove('saved_password');
+      await prefs.remove('remember_me');
+    } catch (e) {
+      print('Error limpiando credenciales recordadas: $e');
+    }
+  }
+
+  // Check if stored credentials exist
+  static Future<bool> hasStoredCredentials() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.containsKey('saved_email') &&
+          prefs.containsKey('saved_password');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Enhanced sign out that also clears remember me if needed
+  static Future<void> signOutAndClearRememberMe() async {
+    try {
+      await clearRememberedCredentials();
+      await _googleSignIn.signOut();
+      await _auth.signOut();
+    } catch (e) {
+      print('Error signing out and clearing remember me: $e');
     }
   }
 }

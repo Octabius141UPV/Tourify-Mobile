@@ -20,20 +20,19 @@ class ApiService {
     };
 
     // Si el usuario está autenticado, añadir token
-    print(
-        '🔐 Debug AuthService.isAuthenticated: ${AuthService.isAuthenticated}');
-    print('🔐 Debug AuthService.currentUser: ${AuthService.currentUser}');
+    print('Debug AuthService.isAuthenticated: ${AuthService.isAuthenticated}');
+    print('Debug AuthService.currentUser: ${AuthService.currentUser}');
 
     if (AuthService.isAuthenticated) {
       final token = await AuthService.currentUser?.getIdToken();
       print(
-          '🔐 Debug token obtenido: ${token != null ? "Token presente (${token.length} chars)" : "Token es null"}');
+          'Debug token obtenido: ${token != null ? "Token presente (${token.length} chars)" : "Token es null"}');
       if (token != null) {
         headers['Authorization'] = 'Bearer $token';
-        print('🔐 Debug headers con token: $headers');
+        print('Debug headers con token: $headers');
       }
     } else {
-      print('🔐 Debug: Usuario no está autenticado');
+      print('Debug: Usuario no está autenticado');
     }
 
     return headers;
@@ -99,7 +98,7 @@ class ApiService {
         queryParameters: queryParams,
       );
 
-      print('📡 API Streaming Request:');
+      print('API Streaming Request:');
       print('  URL: $uri');
       print('  Headers: $headers');
       print('  Location: $location');
@@ -111,7 +110,7 @@ class ApiService {
       final client = http.Client();
       final response = await client.send(request);
 
-      print('📡 API Streaming Response:');
+      print('API Streaming Response:');
       print('  Status Code: ${response.statusCode}');
       print('  Content-Type: ${response.headers['content-type']}');
 
@@ -137,7 +136,7 @@ class ApiService {
               final data = trimmedLine.substring(6).trim();
 
               if (data == '[DONE]') {
-                print('✅ Streaming completed with [DONE] marker');
+                print('Streaming completed with [DONE] marker');
                 yield List<dynamic>.from(activities);
                 client.close();
                 return;
@@ -178,7 +177,7 @@ class ApiService {
             if (newActivity != null) {
               activities.add(newActivity);
               print(
-                  '✅ Activity streamed: ${newActivity['title']} (Total: ${activities.length})');
+                  'Activity streamed: ${newActivity['title']} (Total: ${activities.length})');
               yield List<dynamic>.from(activities);
             }
           }
@@ -198,11 +197,11 @@ class ApiService {
         client.close();
         final bodyBytes = await response.stream.toBytes();
         final body = utf8.decode(bodyBytes);
-        print('❌ Error response body: $body');
+        print('Error response body: $body');
         throw Exception('Error del servidor: ${response.statusCode} - $body');
       }
     } catch (e) {
-      print('❌ Error en fetchActivitiesStream: $e');
+      print('Error en fetchActivitiesStream: $e');
       throw Exception('Error al cargar actividades: $e');
     }
   }
@@ -336,6 +335,38 @@ class ApiService {
     } catch (e) {
       print('Error en createActivityFromPlace: $e');
       return null;
+    }
+  }
+
+  // Eliminar guía usando el endpoint del servidor
+  Future<Map<String, dynamic>> deleteGuide(String guideId) async {
+    try {
+      final headers = await _getHeaders();
+
+      final response = await http.delete(
+        Uri.parse('$baseUrl/guides/$guideId'),
+        headers: headers,
+      );
+
+      final data = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Guía eliminada correctamente',
+        };
+      } else {
+        return {
+          'success': false,
+          'error': data['message'] ?? 'Error al eliminar la guía',
+        };
+      }
+    } catch (e) {
+      print('Error en deleteGuide: $e');
+      return {
+        'success': false,
+        'error': 'Error de conexión: ${e.toString()}',
+      };
     }
   }
 }

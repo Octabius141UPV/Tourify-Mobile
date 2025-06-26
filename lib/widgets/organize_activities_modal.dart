@@ -72,7 +72,7 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
 
     _isAutoScrolling = true;
     _autoScrollTimer =
-        Timer.periodic(const Duration(milliseconds: 50), (timer) {
+        Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (!_isAutoScrolling || !_scrollController.hasClients) {
         timer.cancel();
         return;
@@ -83,11 +83,9 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
       final newOffset =
           (currentOffset + scrollSpeed).clamp(0.0, maxScrollExtent);
 
-      _scrollController.animateTo(
-        newOffset,
-        duration: const Duration(milliseconds: 50),
-        curve: Curves.linear,
-      );
+      if (newOffset != currentOffset) {
+        _scrollController.jumpTo(newOffset);
+      }
     });
   }
 
@@ -98,22 +96,38 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
   }
 
   void _handleDragUpdate(DragUpdateDetails details) {
-    final RenderBox renderBox = context.findRenderObject() as RenderBox;
-    final localPosition = renderBox.globalToLocal(details.globalPosition);
+    // Usar la posición global directamente y convertir a coordenadas de pantalla
     final screenHeight = MediaQuery.of(context).size.height;
-    final appBarHeight = AppBar().preferredSize.height;
-    final availableHeight =
-        screenHeight - appBarHeight - MediaQuery.of(context).padding.top;
+    final globalY = details.globalPosition.dy;
+    final appBarHeight = kToolbarHeight;
+    final statusBarHeight = MediaQuery.of(context).padding.top;
 
-    const edgeThreshold = 100.0; // Zona de auto-scroll en píxeles
-    const scrollSpeed = 8.0; // Velocidad de scroll
+    // Posición relativa al área visible (sin AppBar ni StatusBar)
+    final relativeY = globalY - statusBarHeight - appBarHeight;
+    final visibleHeight = screenHeight - statusBarHeight - appBarHeight;
 
-    // Auto-scroll hacia arriba
-    if (localPosition.dy < edgeThreshold) {
-      _startAutoScroll(-scrollSpeed);
+    const edgeThreshold = 120.0; // Zona de auto-scroll en píxeles
+    const maxScrollSpeed = 25.0; // Velocidad máxima de scroll
+    const minScrollSpeed = 8.0; // Velocidad mínima de scroll
+
+    // Auto-scroll hacia arriba (cuando estás cerca de la parte superior)
+    if (relativeY < edgeThreshold && relativeY > 0) {
+      final proximity = (edgeThreshold - relativeY) / edgeThreshold;
+      // Curva más agresiva: velocidad mínima + velocidad adicional basada en proximidad
+      final additionalSpeed =
+          (maxScrollSpeed - minScrollSpeed) * proximity.clamp(0.0, 1.0);
+      final scrollSpeed = -(minScrollSpeed + additionalSpeed);
+      _startAutoScroll(scrollSpeed);
     }
-    // Auto-scroll hacia abajo
-    else if (localPosition.dy > availableHeight - edgeThreshold) {
+    // Auto-scroll hacia abajo (cuando estás cerca de la parte inferior)
+    else if (relativeY > visibleHeight - edgeThreshold &&
+        relativeY < visibleHeight) {
+      final proximity =
+          (relativeY - (visibleHeight - edgeThreshold)) / edgeThreshold;
+      // Curva más agresiva: velocidad mínima + velocidad adicional basada en proximidad
+      final additionalSpeed =
+          (maxScrollSpeed - minScrollSpeed) * proximity.clamp(0.0, 1.0);
+      final scrollSpeed = minScrollSpeed + additionalSpeed;
       _startAutoScroll(scrollSpeed);
     }
     // Detener auto-scroll si está en el centro
@@ -286,7 +300,6 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
                       return [
                         DragTarget<Activity>(
                           onWillAccept: (data) {
-                            print('DragTarget onWillAccept: $data');
                             return true;
                           },
                           onAccept: (data) {
@@ -308,69 +321,61 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
                             );
                           },
                         ),
-                        GestureDetector(
-                          onPanUpdate: (details) {
-                            // Solo activar auto-scroll si hay un drag activo
-                            if (_draggedDay != null &&
-                                _draggedActivityIndex != null) {
-                              _handleDragUpdate(details);
-                            }
-                          },
-                          child: LongPressDraggable<Activity>(
-                            data: activity,
-                            feedback: Material(
-                              elevation: 4,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                width: MediaQuery.of(context).size.width - 32,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: Colors.blue.shade200,
-                                    width: 2,
-                                  ),
-                                ),
-                                child: _buildActivityContent(activity),
-                              ),
-                            ),
-                            childWhenDragging: Container(
-                              height: 60,
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: Colors.grey.shade300,
-                                  width: 1,
-                                ),
-                              ),
-                            ),
-                            onDragStarted: () =>
-                                _onDragStarted(day.dayNumber, index),
-                            onDragEnd: (_) => _onDragEnded(),
+                        LongPressDraggable<Activity>(
+                          data: activity,
+                          feedback: Material(
+                            elevation: 4,
+                            borderRadius: BorderRadius.circular(12),
                             child: Container(
-                              height: 60,
-                              margin: const EdgeInsets.only(bottom: 8),
+                              width: MediaQuery.of(context).size.width - 32,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: Colors.grey.shade200,
-                                  width: 1,
+                                  color: Colors.blue.shade200,
+                                  width: 2,
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.05),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
                               ),
                               child: _buildActivityContent(activity),
                             ),
+                          ),
+                          childWhenDragging: Container(
+                            height: 60,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.grey.shade300,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          onDragStarted: () =>
+                              _onDragStarted(day.dayNumber, index),
+                          onDragUpdate: _handleDragUpdate,
+                          onDragEnd: (_) => _onDragEnded(),
+                          child: Container(
+                            height: 60,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.grey.shade200,
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: _buildActivityContent(activity),
                           ),
                         ),
                       ];
@@ -378,7 +383,6 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
                       ..add(
                         DragTarget<Activity>(
                           onWillAccept: (data) {
-                            print('DragTarget (final) onWillAccept: $data');
                             return true;
                           },
                           onAccept: (data) {

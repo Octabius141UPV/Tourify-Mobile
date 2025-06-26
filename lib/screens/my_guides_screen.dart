@@ -4,6 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/common/custom_bottom_navigation_bar.dart';
 import 'package:tourify_flutter/services/navigation_service.dart';
 import 'package:tourify_flutter/screens/guide_detail_screen.dart';
+import '../services/collaborators_service.dart';
+import '../services/api_service.dart';
+import '../config/app_colors.dart';
 
 class MyGuidesScreen extends StatefulWidget {
   const MyGuidesScreen({super.key});
@@ -20,12 +23,14 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
   List<Map<String, dynamic>> _sharedGuides = [];
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final CollaboratorsService _collaboratorsService = CollaboratorsService();
+  final ApiService _apiService = ApiService();
   int _selectedTabIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _testFirebaseConnection(); // Probar conexión primero
+
     _fetchGuides();
   }
 
@@ -33,79 +38,107 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
     try {
       setState(() {
         _isLoading = true;
+        _isLoadingShared = true;
       });
 
       final user = _auth.currentUser;
       if (user == null) {
         setState(() {
           _isLoading = false;
+          _isLoadingShared = false;
         });
         return;
       }
 
-      // Cargar mis guías
-      await _fetchMyGuides(user.uid);
-
-      // También cargar guías compartidas de una vez
-      await _fetchSharedGuides(user.uid, user.email);
+      // Ejecutar ambas cargas en paralelo para mejorar el rendimiento
+      await Future.wait([
+        _fetchMyGuides(user.uid),
+        _fetchSharedGuides(user.uid, user.email),
+      ]);
     } catch (error) {
-      print("Error al cargar guías: $error");
+      // Error silencioso
     } finally {
       setState(() {
         _isLoading = false;
+        _isLoadingShared = false;
       });
     }
   }
 
   Future<void> _fetchMyGuides(String userId) async {
     try {
-      print("🏠 Buscando mis guías para userId: $userId");
       final userRef = _firestore.collection('users').doc(userId);
-      final guidesQuery = await _firestore
-          .collection('guides')
-          .where('userRef', isEqualTo: userRef)
-          .orderBy('createdAt', descending: true)
-          .get();
 
-      print("🏠 Mis guías encontradas: ${guidesQuery.docs.length}");
+      List<Map<String, dynamic>> allGuides = [];
+      DocumentSnapshot? lastDocument;
+      const int batchSize = 25; // Cargar en lotes de 25
 
-      final myGuides = guidesQuery.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'id': doc.id,
-          'city': data['city'] ?? data['name'] ?? 'Sin título',
-          'title': data['title'] ?? data['name'] ?? 'Sin título',
-          'destination': data['city'] ?? data['name'] ?? 'Sin destino',
-          'location': data['formattedAddress'] ??
-              data['destination'] ??
-              'Sin ubicación',
-          'createdAt': data['createdAt'] ?? DateTime.now(),
-          'views': data['views'] ?? 0,
-          'totalDays': data['totalDays'] ?? 0,
-          'startDate': data['startDate'],
-          'endDate': data['endDate'],
-          'name': data['name'] ?? 'Sin nombre',
-          'isShared': false,
-          'isPublic': data['isPublic'] ?? false,
-        };
-      }).toList();
+      // Cargar todas las guías en lotes para mejor rendimiento
+      while (true) {
+        Query query = _firestore
+            .collection('guides')
+            .where('userRef', isEqualTo: userRef)
+            .orderBy('createdAt', descending: true)
+            .limit(batchSize);
 
-      // Ordenar por fecha de creación descendente (más reciente primero)
-      myGuides.sort((a, b) {
-        final aDate = a['createdAt'] is Timestamp
-            ? a['createdAt'].toDate()
-            : a['createdAt'];
-        final bDate = b['createdAt'] is Timestamp
-            ? b['createdAt'].toDate()
-            : b['createdAt'];
-        return bDate.compareTo(aDate);
-      });
+        if (lastDocument != null) {
+          query = query.startAfterDocument(lastDocument);
+        }
 
-      setState(() {
-        _myGuides = myGuides;
-      });
+        final QuerySnapshot guidesQuery = await query.get();
+
+        if (guidesQuery.docs.isEmpty) {
+          break; // No hay más documentos
+        }
+
+        final batchGuides = guidesQuery.docs.map((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return {
+            'id': doc.id,
+            'city': data['city'] ?? data['name'] ?? 'Sin título',
+            'title': data['title'] ?? data['name'] ?? 'Sin título',
+            'destination': data['city'] ?? data['name'] ?? 'Sin destino',
+            'location': data['formattedAddress'] ??
+                data['destination'] ??
+                'Sin ubicación',
+            'createdAt': data['createdAt'] ?? DateTime.now(),
+            'totalDays': data['totalDays'] ?? 0,
+            'startDate': data['startDate'],
+            'endDate': data['endDate'],
+            'name': data['name'] ?? 'Sin nombre',
+            'isShared': false,
+          };
+        }).toList();
+
+        allGuides.addAll(batchGuides);
+
+        // Actualizar UI cada lote para mostrar progreso
+        if (mounted) {
+          setState(() {
+            _myGuides = List.from(allGuides);
+          });
+        }
+
+        // Si obtuvimos menos documentos que el tamaño del lote, hemos terminado
+        if (guidesQuery.docs.length < batchSize) {
+          break;
+        }
+
+        lastDocument = guidesQuery.docs.last;
+      }
+
+      if (mounted) {
+        setState(() {
+          _myGuides = allGuides;
+        });
+      }
     } catch (error) {
-      print("❌ Error al cargar mis guías: $error");
+      // Error silencioso, solo actualizar estado
+      if (mounted) {
+        setState(() {
+          _myGuides = [];
+        });
+      }
     }
   }
 
@@ -115,107 +148,38 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
         _isLoadingShared = true;
       });
 
-      print(
-          "🔍 Buscando guías compartidas para user: $userId, email: $userEmail");
       final List<Map<String, dynamic>> sharedGuides = [];
 
-      // Método 1: Buscar en la subcolección sharedWithMe del usuario
+      // Solo usar el método 1: Buscar en la subcolección sharedWithMe del usuario
+      // Este es el método más eficiente y confiable
       final sharedWithMeRef =
           _firestore.collection('users').doc(userId).collection('sharedWithMe');
       final sharedWithMeDocs = await sharedWithMeRef.get();
-      print(
-          "📊 sharedWithMe tiene: ${sharedWithMeDocs.docs.length} documentos");
+
+      // Procesar en lotes para mejor rendimiento
+      final List<Future<void>> guideFutures = [];
 
       for (final doc in sharedWithMeDocs.docs) {
-        final data = doc.data();
-        final guideId = data['guideId'] ?? doc.id;
-        final role = data['role'] ?? 'viewer';
-        final sharedAt = data['sharedAt'];
-        final sharedBy = data['sharedBy'] ?? '';
-
-        // Obtener los datos de la guía
-        final guideRef = _firestore.collection('guides').doc(guideId);
-        final guideDoc = await guideRef.get();
-        if (guideDoc.exists) {
-          final guideData = guideDoc.data()!;
-          sharedGuides.add({
-            'id': guideId,
-            'city': guideData['city'] ?? guideData['name'] ?? 'Sin título',
-            'title': guideData['title'] ?? guideData['name'] ?? 'Sin título',
-            'destination':
-                guideData['city'] ?? guideData['name'] ?? 'Sin destino',
-            'location': guideData['formattedAddress'] ??
-                guideData['destination'] ??
-                'Sin ubicación',
-            'createdAt': guideData['createdAt'] ?? DateTime.now(),
-            'views': guideData['views'] ?? 0,
-            'totalDays': guideData['totalDays'] ?? 0,
-            'startDate': guideData['startDate'],
-            'endDate': guideData['endDate'],
-            'name': guideData['name'] ?? 'Sin nombre',
-            'isShared': true,
-            'isPublic': guideData['isPublic'] ?? false,
-            'role': role,
-            'sharedBy': sharedBy,
-            'sharedAt': sharedAt,
-          });
-        }
+        guideFutures.add(_processSharedGuide(doc, sharedGuides));
       }
 
-      // Método 2: Si tienes email, también buscar en guías donde seas colaborador
-      if (userEmail != null) {
-        print("🔍 Buscando también por email de colaborador: $userEmail");
-        final guidesQuery = await _firestore
-            .collection('guides')
-            .where('collaborators', arrayContains: {'email': userEmail}).get();
+      // Procesar todos los documentos en paralelo
+      await Future.wait(guideFutures);
 
-        print("📊 Guías donde soy colaborador: ${guidesQuery.docs.length}");
-
-        for (final doc in guidesQuery.docs) {
-          final guideData = doc.data();
-          final guideId = doc.id;
-
-          // Verificar que no esté ya en la lista (para evitar duplicados)
-          if (!sharedGuides.any((guide) => guide['id'] == guideId)) {
-            // Buscar el rol en la lista de colaboradores
-            final collaborators =
-                guideData['collaborators'] as List<dynamic>? ?? [];
-            final myCollaboration = collaborators.firstWhere(
-              (collab) => collab['email'] == userEmail,
-              orElse: () => {'role': 'viewer'},
-            );
-
-            sharedGuides.add({
-              'id': guideId,
-              'city': guideData['city'] ?? guideData['name'] ?? 'Sin título',
-              'title': guideData['title'] ?? guideData['name'] ?? 'Sin título',
-              'destination':
-                  guideData['city'] ?? guideData['name'] ?? 'Sin destino',
-              'location': guideData['formattedAddress'] ??
-                  guideData['destination'] ??
-                  'Sin ubicación',
-              'createdAt': guideData['createdAt'] ?? DateTime.now(),
-              'views': guideData['views'] ?? 0,
-              'totalDays': guideData['totalDays'] ?? 0,
-              'startDate': guideData['startDate'],
-              'endDate': guideData['endDate'],
-              'name': guideData['name'] ?? 'Sin nombre',
-              'isShared': true,
-              'isPublic': guideData['isPublic'] ?? false,
-              'role': myCollaboration['role'] ?? 'viewer',
-              'sharedBy': 'Directo', // Indicar que se encontró directamente
-              'sharedAt': null,
-            });
-          }
+      // Ordenar por fecha de compartido (más reciente primero)
+      sharedGuides.sort((a, b) {
+        final aDate = a['sharedAt'] ?? DateTime.now();
+        final bDate = b['sharedAt'] ?? DateTime.now();
+        if (aDate is Timestamp && bDate is Timestamp) {
+          return bDate.toDate().compareTo(aDate.toDate());
         }
-      }
+        return 0;
+      });
 
-      print("✅ Total de guías compartidas encontradas: ${sharedGuides.length}");
       setState(() {
         _sharedGuides = sharedGuides;
       });
     } catch (error) {
-      print("❌ Error al cargar guías compartidas: $error");
       setState(() {
         _sharedGuides = [];
       });
@@ -223,6 +187,70 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
       setState(() {
         _isLoadingShared = false;
       });
+    }
+  }
+
+  Future<void> _processSharedGuide(
+      DocumentSnapshot doc, List<Map<String, dynamic>> sharedGuides) async {
+    try {
+      final data = doc.data() as Map<String, dynamic>?;
+      if (data == null) return;
+
+      final guideId = data['guideId'] ?? doc.id;
+      final sharedAt = data['sharedAt'];
+      final sharedBy = data['sharedBy'] ?? '';
+      final role =
+          data['role'] ?? 'viewer'; // Obtener rol directamente del documento
+
+      // Obtener los datos de la guía
+      final guideDoc = await _firestore.collection('guides').doc(guideId).get();
+
+      if (guideDoc.exists) {
+        final guideData = guideDoc.data()!;
+
+        // Solo verificar con el servicio si no tenemos rol en el documento
+        String finalRole = role;
+        if (role == 'viewer' || role.isEmpty) {
+          try {
+            final roleResponse =
+                await _collaboratorsService.getUserRole(guideId);
+            if (roleResponse['success'] == true &&
+                roleResponse['isOwner'] != true &&
+                roleResponse['role'] != null &&
+                roleResponse['role'] != 'none') {
+              finalRole = roleResponse['role'] as String;
+            } else {
+              // Si no tiene un rol válido, no incluir la guía
+              return;
+            }
+          } catch (e) {
+            // Si falla la verificación de rol, usar el rol del documento
+            if (role.isEmpty || role == 'viewer') return;
+          }
+        }
+
+        sharedGuides.add({
+          'id': guideId,
+          'city': guideData['city'] ?? guideData['name'] ?? 'Sin título',
+          'title': guideData['title'] ?? guideData['name'] ?? 'Sin título',
+          'destination':
+              guideData['city'] ?? guideData['name'] ?? 'Sin destino',
+          'location': guideData['formattedAddress'] ??
+              guideData['destination'] ??
+              'Sin ubicación',
+          'createdAt': guideData['createdAt'] ?? DateTime.now(),
+          'totalDays': guideData['totalDays'] ?? 0,
+          'startDate': guideData['startDate'],
+          'endDate': guideData['endDate'],
+          'name': guideData['name'] ?? 'Sin nombre',
+          'isShared': true,
+          'role': finalRole,
+          'sharedBy': 'Sistema',
+          'sharedAt': null,
+        });
+      }
+    } catch (e) {
+      // Error silencioso para esta guía específica
     }
   }
 
@@ -236,39 +264,18 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
     });
 
     try {
-      // Recargar mis guías
-      await _fetchMyGuides(user.uid);
-
-      // Recargar guías compartidas
-      await _fetchSharedGuides(user.uid, user.email);
+      // Ejecutar ambas recargas en paralelo
+      await Future.wait([
+        _fetchMyGuides(user.uid),
+        _fetchSharedGuides(user.uid, user.email),
+      ]);
     } catch (error) {
-      print("Error al actualizar guías: $error");
+      // Error silencioso
     } finally {
       setState(() {
         _isLoading = false;
         _isLoadingShared = false;
       });
-    }
-  }
-
-  Future<void> _testFirebaseConnection() async {
-    try {
-      print("🔧 Probando conexión a Firebase...");
-      final user = _auth.currentUser;
-      print("👤 Usuario actual: ${user?.uid} - ${user?.email}");
-
-      // Probar consulta simple a la colección de guías
-      final testQuery = await _firestore.collection('guides').limit(1).get();
-      print(
-          "📊 Conexión exitosa. Documentos en guides: ${testQuery.docs.length}");
-
-      // Probar collectionGroup
-      final testCollectionGroup =
-          await _firestore.collectionGroup('collaborators').limit(1).get();
-      print(
-          "👥 CollectionGroup funciona. Documentos en collaborators: ${testCollectionGroup.docs.length}");
-    } catch (error) {
-      print("❌ Error en prueba de Firebase: $error");
     }
   }
 
@@ -284,130 +291,229 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Cabecera
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 28, 20, 0),
+                  // Cabecera mejorada
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 32, 20, 0),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white,
+                          Colors.blue[50]!.withOpacity(0.3),
+                        ],
+                      ),
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Mis Viajes',
-                          style: TextStyle(
-                            color: Color(0xFF1F2937),
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF60A5FA).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: const Icon(
+                                Icons.map_rounded,
+                                color: Color(0xFF2563EB),
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Mis Viajes',
+                                    style: TextStyle(
+                                      color: Color(0xFF1F2937),
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Gestiona y organiza tus aventuras',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
+                  ),
+
+                  // Tabs mejorados
+                  Container(
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _selectedTabIndex = 0),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeInOut,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                color: _selectedTabIndex == 0
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: _selectedTabIndex == 0
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                    : [],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.folder_rounded,
+                                    size: 18,
+                                    color: _selectedTabIndex == 0
+                                        ? const Color(0xFF2563EB)
+                                        : Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Mis Guías',
+                                    style: TextStyle(
+                                      color: _selectedTabIndex == 0
+                                          ? const Color(0xFF2563EB)
+                                          : Colors.grey[600],
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _selectedTabIndex == 0
+                                          ? const Color(0xFF2563EB)
+                                          : Colors.grey[400],
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '${_myGuides.length}',
+                                      style: TextStyle(
+                                        color: _selectedTabIndex == 0
+                                            ? Colors.white
+                                            : Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Gestiona tus guías de viaje',
-                          style: TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontSize: 16,
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => setState(() => _selectedTabIndex = 1),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeInOut,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                color: _selectedTabIndex == 1
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: _selectedTabIndex == 1
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                    : [],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.people_rounded,
+                                    size: 18,
+                                    color: _selectedTabIndex == 1
+                                        ? const Color(0xFF2563EB)
+                                        : Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Compartidas',
+                                    style: TextStyle(
+                                      color: _selectedTabIndex == 1
+                                          ? const Color(0xFF2563EB)
+                                          : Colors.grey[600],
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _selectedTabIndex == 1
+                                          ? const Color(0xFF2563EB)
+                                          : Colors.grey[400],
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      '${_sharedGuides.length}',
+                                      style: TextStyle(
+                                        color: _selectedTabIndex == 1
+                                            ? Colors.white
+                                            : Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  // Tabs personalizados tipo segmented control
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.blue.withOpacity(0.06),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () =>
-                                  setState(() => _selectedTabIndex = 0),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.ease,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _selectedTabIndex == 0
-                                      ? const Color(0xFF60A5FA)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.map_outlined,
-                                        size: 18,
-                                        color: _selectedTabIndex == 0
-                                            ? Colors.white
-                                            : Colors.blue[700]),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Mis Guías (${_myGuides.length})',
-                                      style: TextStyle(
-                                        color: _selectedTabIndex == 0
-                                            ? Colors.white
-                                            : Colors.blue[700],
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () =>
-                                  setState(() => _selectedTabIndex = 1),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.ease,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _selectedTabIndex == 1
-                                      ? const Color(0xFF60A5FA)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.people_outlined,
-                                        size: 18,
-                                        color: _selectedTabIndex == 1
-                                            ? Colors.white
-                                            : Colors.blue[700]),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Compartidas (${_sharedGuides.length})',
-                                      style: TextStyle(
-                                        color: _selectedTabIndex == 1
-                                            ? Colors.white
-                                            : Colors.blue[700],
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+
                   // Contenido de las tabs
                   Expanded(
                     child: _selectedTabIndex == 0
@@ -450,51 +556,130 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
 
     if (guides.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _selectedTabIndex == 0
-                  ? Icons.folder_outlined
-                  : Icons.people_outlined,
-              size: 64,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _selectedTabIndex == 0
-                  ? 'No tienes guías creadas'
-                  : 'No tienes guías compartidas',
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.grey,
+        child: Container(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: _selectedTabIndex == 0
+                      ? const Color(0xFF60A5FA).withOpacity(0.1)
+                      : const Color(0xFF10B981).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(
+                  _selectedTabIndex == 0
+                      ? Icons.explore_rounded
+                      : Icons.people_rounded,
+                  size: 48,
+                  color: _selectedTabIndex == 0
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFF059669),
+                ),
               ),
-            ),
-            if (_selectedTabIndex == 1) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 24),
               Text(
-                'Las guías que otros compartan contigo aparecerán aquí',
+                _selectedTabIndex == 0
+                    ? '¡Tu aventura comienza aquí!'
+                    : '¡Conecta con otros viajeros!',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _selectedTabIndex == 0
+                    ? 'Aún no has creado ninguna guía de viaje.\nComienza planificando tu próxima aventura.'
+                    : 'Cuando otros viajeros compartan sus guías contigo,\naparecerán aquí para que puedas colaborar.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 16,
                   color: Colors.grey[600],
+                  height: 1.5,
                 ),
               ),
-              const SizedBox(height: 16),
-              if (_isLoadingShared)
-                const CircularProgressIndicator()
-              else
-                ElevatedButton.icon(
-                  onPressed: _refreshGuides,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Actualizar'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
+              const SizedBox(height: 32),
+              if (_selectedTabIndex == 1) ...[
+                if (_isLoadingShared)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.blue[600],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Buscando guías compartidas...',
+                          style: TextStyle(
+                            color: Colors.blue[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF60A5FA),
+                          const Color(0xFF2563EB),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF2563EB).withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton.icon(
+                      onPressed: _refreshGuides,
+                      icon: const Icon(Icons.refresh_rounded,
+                          color: Colors.white),
+                      label: const Text(
+                        'Actualizar',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        shadowColor: Colors.transparent,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+              ],
             ],
-          ],
+          ),
         ),
       );
     }
@@ -516,206 +701,226 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
   Widget _buildGuideCard(Map<String, dynamic> guide) {
     final String title = (guide['title'] ?? 'Sin título').toString();
     final String location = (guide['location'] ?? 'Sin ubicación').toString();
-    final String views = (guide['views'] ?? '0').toString();
     final int totalDays =
         int.tryParse(guide['totalDays']?.toString() ?? '0') ?? 0;
     final bool isShared = guide['isShared'] == true;
     final String role = (guide['role'] ?? '').toString();
-    final bool isPublic = guide['isPublic'] == true;
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => GuideDetailScreen(
-              guideId: guide['id'].toString(),
-              guideTitle: title,
-            ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 0,
           ),
-        );
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: isPublic
-              ? Border.all(
-                  color: const Color(0xFF10B981).withOpacity(0.3), width: 1.5)
-              : null,
-          boxShadow: [
-            BoxShadow(
-              color: isPublic
-                  ? const Color(0xFF10B981).withOpacity(0.15)
-                  : Colors.black.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => GuideDetailScreen(
-                    guideId: guide['id'].toString(),
-                    guideTitle: title,
-                  ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => GuideDetailScreen(
+                  guideId: guide['id'].toString(),
+                  guideTitle: title,
                 ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Fila superior: título a la izquierda, botones a la derecha
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                title,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+              ),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header con título y acciones
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1F2937),
                             ),
-                            // Botón de editar nombre (solo si es propietario o editor)
-                            if (!isShared ||
-                                role == 'editor' ||
-                                guide['role'] == null ||
-                                guide['role'] == 'owner')
-                              IconButton(
-                                icon: const Icon(Icons.edit, size: 20),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.location_on_rounded,
+                                size: 16,
                                 color: Colors.grey[600],
-                                onPressed: () => _editGuideName(guide),
-                                padding: const EdgeInsets.all(8),
-                                constraints: const BoxConstraints(
-                                  minWidth: 36,
-                                  minHeight: 36,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  location,
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
                                 ),
                               ),
-                          ],
-                        ),
+                            ],
+                          ),
+                        ],
                       ),
-                      // Mostrar botón de "Hacer privada" o botón de "Publicar"
-                      if (isPublic &&
-                          (guide['role'] == null || guide['role'] == 'owner'))
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            minimumSize: const Size(0, 32),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            textStyle: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600),
-                            elevation: 2,
-                          ),
-                          icon: const Icon(Icons.lock_outline, size: 16),
-                          label: const Text('Hacer privada'),
-                          onPressed: () => _confirmarHacerPrivada(guide),
-                        )
-                      else if (!isPublic &&
-                          (guide['role'] == null || guide['role'] == 'owner'))
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2196F3),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            minimumSize: const Size(0, 32),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            textStyle: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600),
-                            elevation: 2,
-                          ),
-                          icon: const Icon(Icons.cloud_upload, size: 16),
-                          label: const Text('Publicar'),
-                          onPressed: () => _confirmarPublicarGuia(guide),
+                    ),
+                    // Menu de acciones - Solo mostrar si tiene permisos
+                    if (!isShared || role == 'editor')
+                      PopupMenuButton<String>(
+                        icon: Icon(
+                          Icons.more_vert_rounded,
+                          color: Colors.grey[600],
+                          size: 24,
                         ),
-                    ],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 8,
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'edit':
+                              _editGuideName(guide);
+                              break;
+                            case 'delete':
+                              _confirmarEliminarGuia(guide);
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          // Editar (solo si es propietario o editor)
+                          if (!isShared || role == 'editor')
+                            PopupMenuItem<String>(
+                              value: 'edit',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.edit_rounded,
+                                      size: 20, color: Colors.blue[600]),
+                                  const SizedBox(width: 12),
+                                  const Text('Editar'),
+                                ],
+                              ),
+                            ),
+                          // Eliminar (solo propietarios)
+                          if (!isShared)
+                            PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.delete_rounded,
+                                      size: 20, color: Colors.red[600]),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'Eliminar',
+                                    style: TextStyle(color: Colors.red[600]),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+
+                // Badges y etiquetas
+                if (isShared) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF60A5FA).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFF60A5FA).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.people_rounded,
+                          size: 14,
+                          color: const Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          role == 'editor' ? 'Organizador' : 'Acoplado',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF2563EB),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on,
-                          size: 16, color: Colors.grey),
+                ],
+
+                // Información adicional
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    if (totalDays > 0) ...[
+                      Icon(
+                        Icons.calendar_today_rounded,
+                        size: 16,
+                        color: Colors.grey[500],
+                      ),
                       const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          location,
-                          style: const TextStyle(color: Colors.grey),
+                      Text(
+                        '$totalDays día${totalDays > 1 ? 's' : ''}',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 13,
                         ),
                       ),
                     ],
-                  ),
-                  if (isShared)
+                    const Spacer(),
+                    // Indicador de acceso rápido
                     Container(
-                      margin: const EdgeInsets.only(top: 8, bottom: 4),
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.1),
+                        color: const Color(0xFF60A5FA).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.people, size: 16, color: Colors.blue[700]),
+                          Icon(
+                            Icons.touch_app_rounded,
+                            size: 12,
+                            color: const Color(0xFF2563EB),
+                          ),
                           const SizedBox(width: 4),
                           Text(
-                            role == 'editor' ? 'Editor' : 'Acoplado',
+                            'Toca para ver',
                             style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue[700],
+                              fontSize: 11,
+                              color: const Color(0xFF2563EB),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
                     ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (isPublic) ...[
-                        const Icon(Icons.visibility,
-                            size: 16, color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text(
-                          views,
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                      ],
-                      if (totalDays > 0) ...[
-                        const SizedBox(width: 16),
-                        const Icon(Icons.calendar_today,
-                            size: 16, color: Colors.grey),
-                        const SizedBox(width: 4),
-                        Text(
-                          '$totalDays días',
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
@@ -798,121 +1003,132 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
     }
   }
 
-  void _confirmarHacerPrivada(Map<String, dynamic> guide) {
+  void _confirmarEliminarGuia(Map<String, dynamic> guide) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('¿Hacer privada?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.delete_rounded,
+                color: Colors.red[700],
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('¿Eliminar guía?'),
+          ],
+        ),
         content: Text(
-            '¿Seguro que quieres hacer privada "${guide['title']}"? Ya no será visible para otros usuarios.'),
+          '¿Seguro que quieres eliminar la guía "${guide['title']}"? Esta acción no se puede deshacer.',
+          style: const TextStyle(fontSize: 16),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _hacerPrivada(guide);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
-              foregroundColor: Colors.white,
+            child: Text(
+              'Cancelar',
+              style: TextStyle(color: Colors.grey[600]),
             ),
-            child: const Text('Hacer privada'),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.red[400]!, Colors.red[600]!],
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.pop(context);
+                await _eliminarGuia(guide);
+              },
+              icon: const Icon(Icons.delete_rounded,
+                  size: 18, color: Colors.white),
+              label: const Text(
+                'Eliminar',
+                style:
+                    TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _confirmarPublicarGuia(Map<String, dynamic> guide) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('¿Publicar guía?'),
-        content: Text(
-            '¿Seguro que quieres publicar "${guide['title']}"? Una vez publicada será visible para otros usuarios.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _publicarGuia(guide);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2196F3),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Publicar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _hacerPrivada(Map<String, dynamic> guide) async {
+  Future<void> _eliminarGuia(Map<String, dynamic> guide) async {
     try {
       final guideId = guide['id'].toString();
-      await _firestore
-          .collection('guides')
-          .doc(guideId)
-          .update({'isPublic': false});
-      setState(() {
-        _myGuides = _myGuides.map((g) {
-          if (g['id'] == guideId) {
-            return {...g, 'isPublic': false};
-          }
-          return g;
-        }).toList();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Guía ahora es privada'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al hacer privada la guía: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
 
-  Future<void> _publicarGuia(Map<String, dynamic> guide) async {
-    try {
-      final guideId = guide['id'].toString();
-      await _firestore
-          .collection('guides')
-          .doc(guideId)
-          .update({'isPublic': true});
-      setState(() {
-        _myGuides = _myGuides.map((g) {
-          if (g['id'] == guideId) {
-            return {...g, 'isPublic': true};
-          }
-          return g;
-        }).toList();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Guía publicada correctamente'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // Usar el endpoint del servidor para eliminar la guía
+      final result = await _apiService.deleteGuide(guideId);
+
+      if (result['success'] == true) {
+        // Solo actualizar la UI si la eliminación fue exitosa
+        setState(() {
+          _myGuides = _myGuides.where((g) => g['id'] != guideId).toList();
+          _sharedGuides =
+              _sharedGuides.where((g) => g['id'] != guideId).toList();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['message'] ?? 'Guía eliminada correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // Mostrar error específico del servidor
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['error'] ?? 'Error al eliminar la guía'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al publicar la guía: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // En caso de error de conexión, intentar eliminar directamente de Firestore como fallback
+      try {
+        print('Error con API, intentando fallback a Firestore: $e');
+        final guideId = guide['id'].toString();
+        await _firestore.collection('guides').doc(guideId).delete();
+
+        setState(() {
+          _myGuides = _myGuides.where((g) => g['id'] != guideId).toList();
+          _sharedGuides =
+              _sharedGuides.where((g) => g['id'] != guideId).toList();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Guía eliminada correctamente (modo offline)'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } catch (fallbackError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al eliminar la guía: $fallbackError'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 }
@@ -1021,7 +1237,7 @@ class _EditGuideDialogState extends State<_EditGuideDialog> {
         ElevatedButton(
           onPressed: _isLoading ? null : _handleSave,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF2196F3),
+            backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
           ),
           child: _isLoading

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../config/app_colors.dart';
+
 class GuideCard extends StatelessWidget {
   final String title;
   final String author;
@@ -44,11 +46,7 @@ class GuideCard extends StatelessWidget {
                 height: 60,
                 decoration: const BoxDecoration(
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF60A5FA), Color(0xFF2563EB)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  gradient: AppColors.primaryGradient,
                 ),
                 child: Center(
                   child: Container(
@@ -67,7 +65,7 @@ class GuideCard extends StatelessWidget {
                     child: Icon(
                       Icons.location_city,
                       size: 28,
-                      color: Colors.blue[400],
+                      color: AppColors.primary,
                     ),
                   ),
                 ),

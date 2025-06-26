@@ -46,7 +46,7 @@ void main() {
       final result = await DiscoverService.createGuide(
         destination: 'Madrid',
         startDate: DateTime.now(),
-        endDate: DateTime.now().add(Duration(days: 3)),
+        endDate: DateTime.now().add(Duration(days: 7)),
         travelers: 2,
       );
 
@@ -60,7 +60,7 @@ void main() {
         DiscoverService.createGuideViaApi(
           destination: 'Madrid',
           startDate: DateTime.now(),
-          endDate: DateTime.now().add(Duration(days: 3)),
+          endDate: DateTime.now().add(Duration(days: 7)),
           travelers: 2,
         ),
         throwsA(isA<Exception>().having(
