@@ -92,39 +92,37 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
       _error = null;
     });
 
-    try {
-      print('=== GENERANDO LINK ===');
-      print('Rol del usuario: $_userRole');
-      print('Rol del link: $_selectedRole');
-      print('¿Puede gestionar links? ${_canManageLinks()}');
+    final result = await _handleFirestoreOperation<Map<String, dynamic>>(
+      () async {
+        print('=== GENERANDO LINK ===');
+        print('Rol del usuario: $_userRole');
+        print('Rol del link: $_selectedRole');
+        print('¿Puede gestionar links? ${_canManageLinks()}');
 
-      final result = await _collaboratorsService.generateAccessLink(
-          widget.guideId, _selectedRole);
-      await _loadAccessLinks();
-      if (mounted) {
-        // Copiar el link al portapapeles
-        final String? link = result['link'] as String?;
-        if (link != null) {
-          await Clipboard.setData(ClipboardData(text: link));
-          final roleText =
-              _selectedRole == 'editor' ? 'organizador' : 'acoplado';
-          _showMessage(
-              '✅ Link de $roleText generado y copiado\n\nQuien use este link será $roleText automáticamente\n\n$link');
-        } else {
-          _showMessage('Link de acceso generado correctamente');
-        }
+        final result = await _collaboratorsService.generateAccessLink(
+            widget.guideId, _selectedRole);
+        await _loadAccessLinks();
+        return result;
+      },
+      operationName: 'generar link de acceso',
+    );
+
+    if (result != null && mounted) {
+      // Copiar el link al portapapeles
+      final String? link = result['link'] as String?;
+      if (link != null) {
+        await Clipboard.setData(ClipboardData(text: link));
+        final roleText = _selectedRole == 'editor' ? 'organizador' : 'acoplado';
+        _showMessage(
+            '✅ Link de $roleText generado y copiado\n\nQuien use este link será $roleText automáticamente\n\n$link');
+      } else {
+        _showMessage('Link de acceso generado correctamente');
       }
-    } catch (e) {
-      print('Error al generar link: $e');
-      if (mounted) {
-        _showMessage('Error al generar link de acceso: ${e.toString()}',
-            isError: true);
-      }
-    } finally {
-      setState(() {
-        _isGeneratingLink = false;
-      });
     }
+
+    setState(() {
+      _isGeneratingLink = false;
+    });
   }
 
   Future<void> _revokeAccessLink(String token) async {
@@ -255,21 +253,28 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
   }
 
   void _showMessage(String message, {bool isError = false}) {
-    if (mounted) {
-      showCupertinoDialog(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          title: Text(isError ? 'Error' : 'Éxito'),
-          content: Text(message),
-          actions: [
-            CupertinoDialogAction(
-              child: const Text('OK'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ],
-        ),
-      );
-    }
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        duration: Duration(seconds: isError ? 6 : 4),
+        action: isError && message.contains('temporalmente no disponible')
+            ? SnackBarAction(
+                label: 'Reintentar',
+                textColor: Colors.white,
+                onPressed: () {
+                  // Recargar datos después de un error temporal
+                  _loadCollaborators();
+                  _loadAccessLinks();
+                },
+              )
+            : null,
+      ),
+    );
   }
 
   bool _canManageCollaborators() {
@@ -1169,6 +1174,60 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
         ],
       ),
     );
+  }
+
+  // Wrapper para manejar errores de Firestore
+  Future<T?> _handleFirestoreOperation<T>(
+    Future<T> Function() operation, {
+    String? loadingMessage,
+    String? successMessage,
+    String? operationName,
+  }) async {
+    try {
+      if (loadingMessage != null && mounted) {
+        setState(() {
+          _error = null;
+        });
+        // Mostrar loading solo si es una operación larga
+        if (loadingMessage.isNotEmpty) {
+          _showMessage(loadingMessage);
+        }
+      }
+
+      final result = await operation();
+
+      if (successMessage != null && mounted) {
+        _showMessage(successMessage);
+      }
+
+      return result;
+    } catch (e) {
+      String userMessage;
+
+      if (e.toString().contains('temporalmente no disponible') ||
+          e.toString().contains('unavailable') ||
+          e.toString().contains('service is currently unavailable')) {
+        userMessage = '🔄 Servicio temporalmente no disponible\n\n'
+            'Firebase está experimentando dificultades técnicas. '
+            'Por favor, inténtalo de nuevo en unos momentos.\n\n'
+            'Puedes tocar "Reintentar" para volver a intentarlo.';
+      } else if (e.toString().contains('permission-denied')) {
+        userMessage = '🚫 Sin permisos\n\n'
+            'No tienes los permisos necesarios para realizar esta acción.';
+      } else if (e.toString().contains('network')) {
+        userMessage = '📡 Problema de conexión\n\n'
+            'Verifica tu conexión a internet e inténtalo de nuevo.';
+      } else {
+        userMessage = 'Error en ${operationName ?? "la operación"}\n\n'
+            '${e.toString()}';
+      }
+
+      if (mounted) {
+        _showMessage(userMessage, isError: true);
+      }
+
+      return null;
+    }
   }
 }
 

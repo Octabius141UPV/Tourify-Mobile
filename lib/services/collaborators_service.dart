@@ -13,6 +13,45 @@ class CollaboratorsService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final _uuid = const Uuid();
 
+  // Función de reintento con backoff exponencial para errores de Firestore
+  Future<T> _retryFirestoreOperation<T>(
+    Future<T> Function() operation, {
+    int maxRetries = 3,
+    Duration initialDelay = const Duration(seconds: 1),
+  }) async {
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (e) {
+        // Solo reintentar para errores de unavailable
+        if (e.toString().contains('unavailable') ||
+            e.toString().contains('UNAVAILABLE') ||
+            e.toString().contains('service is currently unavailable')) {
+          if (attempt == maxRetries - 1) {
+            // Si es el último intento, lanzar la excepción
+            throw Exception(
+                'Servicio temporalmente no disponible. Por favor, inténtalo de nuevo en unos minutos.');
+          }
+
+          // Calcular delay con backoff exponencial: 1s, 2s, 4s...
+          final delay = Duration(
+              milliseconds: (initialDelay.inMilliseconds * (1 << attempt))
+                  .clamp(1000, 10000));
+
+          print(
+              'Reintentando operación en ${delay.inSeconds}s (intento ${attempt + 1}/$maxRetries)');
+          await Future.delayed(delay);
+        } else {
+          // Para otros errores, no reintentar
+          rethrow;
+        }
+      }
+    }
+
+    // Esto no debería alcanzarse nunca
+    throw Exception('Error inesperado en la operación de reintento');
+  }
+
   // Obtener colaboradores de una guía
   Future<Map<String, dynamic>> getCollaborators(String guideId) async {
     try {
@@ -51,7 +90,8 @@ class CollaboratorsService {
 
       // Fallback a Firestore si el servidor no está disponible
       try {
-        final doc = await _firestore.collection('guides').doc(guideId).get();
+        final doc = await _retryFirestoreOperation(
+            () => _firestore.collection('guides').doc(guideId).get());
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
           return {
@@ -116,48 +156,49 @@ class CollaboratorsService {
     } catch (e) {
       // Error silencioso
 
-      // Fallback a Firestore
+      // Fallback a Firestore con reintentos
       try {
-        final docRef = _firestore.collection('guides').doc(guideId);
-        final doc = await docRef.get();
+        return await _retryFirestoreOperation(() async {
+          final docRef = _firestore.collection('guides').doc(guideId);
+          final doc = await docRef.get();
 
-        if (doc.exists) {
-          final data = doc.data() as Map<String, dynamic>;
-          final List<dynamic> collaborators =
-              List.from(data['collaborators'] ?? []);
+          if (doc.exists) {
+            final data = doc.data() as Map<String, dynamic>;
+            final List<dynamic> collaborators =
+                List.from(data['collaborators'] ?? []);
 
-          // Verificar si el colaborador ya existe
-          final existingIndex = collaborators.indexWhere(
-            (collab) => collab['email'] == email,
-          );
+            // Verificar si el colaborador ya existe
+            final existingIndex = collaborators.indexWhere(
+              (collab) => collab['email'] == email,
+            );
 
-          if (existingIndex >= 0) {
-            // Actualizar el rol si ya existe
-            collaborators[existingIndex]['role'] = role;
+            if (existingIndex >= 0) {
+              // Actualizar el rol si ya existe
+              collaborators[existingIndex]['role'] = role;
+            } else {
+              // Añadir nuevo colaborador
+              collaborators.add({
+                'email': email,
+                'role': role,
+                'addedAt': FieldValue.serverTimestamp(),
+              });
+            }
+
+            await docRef.update({'collaborators': collaborators});
+
+            return {
+              'success': true,
+              'message': 'Colaborador añadido correctamente',
+            };
           } else {
-            // Añadir nuevo colaborador
-            collaborators.add({
-              'email': email,
-              'role': role,
-              'addedAt': FieldValue.serverTimestamp(),
-            });
+            throw Exception('Guía no encontrada');
           }
-
-          await docRef.update({'collaborators': collaborators});
-
-          return {
-            'success': true,
-            'message': 'Colaborador añadido correctamente',
-          };
-        } else {
-          throw Exception('Guía no encontrada');
-        }
+        });
       } catch (firestoreError) {
         // Error silencioso
         return {
           'success': false,
-          'error':
-              'Error al añadir colaborador: \\${firestoreError.toString()}',
+          'error': 'Error al añadir colaborador: ${firestoreError.toString()}',
         };
       }
     }
@@ -378,7 +419,8 @@ class CollaboratorsService {
       }
 
       // Verificar que el usuario tiene permisos para generar links
-      final guideDoc = await _firestore.collection('guides').doc(guideId).get();
+      final guideDoc = await _retryFirestoreOperation(
+          () => _firestore.collection('guides').doc(guideId).get());
       if (!guideDoc.exists) {
         throw Exception('La guía no existe');
       }
@@ -423,18 +465,18 @@ class CollaboratorsService {
       final expiresAt = DateTime.now().add(const Duration(days: 7));
 
       // Guardar el link en Firestore - CORREGIDO: no guardar el campo 'token' duplicado
-      await _firestore
-          .collection('guides')
-          .doc(guideId)
-          .collection('accessLinks')
-          .doc(token)
-          .set({
-        'role': role,
-        'createdBy': user.uid,
-        'createdAt': FieldValue.serverTimestamp(),
-        'expiresAt': Timestamp.fromDate(expiresAt),
-        'isActive': true,
-      });
+      await _retryFirestoreOperation(() => _firestore
+              .collection('guides')
+              .doc(guideId)
+              .collection('accessLinks')
+              .doc(token)
+              .set({
+            'role': role,
+            'createdBy': user.uid,
+            'createdAt': FieldValue.serverTimestamp(),
+            'expiresAt': Timestamp.fromDate(expiresAt),
+            'isActive': true,
+          }));
 
       // Construir el link de acceso usando tu API
       final accessLink =
@@ -463,13 +505,15 @@ class CollaboratorsService {
 
       print('Verificando link de acceso para guía: $guideId, token: $token');
 
-      // Buscar el link en Firestore
-      final linkDoc = await _firestore
-          .collection('guides')
-          .doc(guideId)
-          .collection('accessLinks')
-          .doc(token)
-          .get();
+      // Usar reintento para operaciones de Firestore
+      final linkDoc = await _retryFirestoreOperation(() async {
+        return await _firestore
+            .collection('guides')
+            .doc(guideId)
+            .collection('accessLinks')
+            .doc(token)
+            .get();
+      });
 
       if (!linkDoc.exists) {
         print('Error: Link de acceso no encontrado');
@@ -491,7 +535,8 @@ class CollaboratorsService {
       }
 
       // Verificar si el usuario ya es colaborador de esta guía
-      final existingRole = await getUserRole(guideId);
+      final existingRole =
+          await _retryFirestoreOperation(() => getUserRole(guideId));
       if (existingRole['role'] != 'none' && existingRole['role'] != null) {
         print('Usuario ya es colaborador con rol: ${existingRole['role']}');
         return true; // Ya es colaborador, considerarlo como éxito
@@ -499,11 +544,11 @@ class CollaboratorsService {
 
       // Agregar al usuario como colaborador
       print('Agregando usuario como colaborador con rol: ${linkData['role']}');
-      await addCollaborator(
-        guideId: guideId,
-        email: user.email!,
-        role: linkData['role'],
-      );
+      await _retryFirestoreOperation(() => addCollaborator(
+            guideId: guideId,
+            email: user.email!,
+            role: linkData['role'],
+          ));
 
       // NO desactivar el link después de usarlo - permitir múltiples usos hasta expirar
       // await linkDoc.reference.update({'isActive': false});
