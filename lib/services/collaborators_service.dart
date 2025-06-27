@@ -409,92 +409,74 @@ class CollaboratorsService {
     }
   }
 
-  // Generar un link de acceso para una guía
-  Future<Map<String, dynamic>> generateAccessLink(
-      String guideId, String role) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('Usuario no autenticado');
-      }
-
-      // Verificar que el usuario tiene permisos para generar links
-      final guideDoc = await _retryFirestoreOperation(
-          () => _firestore.collection('guides').doc(guideId).get());
-      if (!guideDoc.exists) {
-        throw Exception('La guía no existe');
-      }
-
-      final guideData = guideDoc.data()!;
-
-      // Verificar si el usuario tiene permisos para generar links (propietario o editor)
-      bool canManageLinks = false;
-
-      // Verificar si es el propietario
-      if (guideData['userId'] == user.uid) {
-        canManageLinks = true;
-      } else if (guideData['authorId'] == user.uid) {
-        canManageLinks = true;
-      } else if (guideData['userRef'] != null) {
-        try {
-          final userRef = guideData['userRef'] as DocumentReference;
-          final expectedUserRef = _firestore.collection('users').doc(user.uid);
-          if (userRef.path == expectedUserRef.path) {
-            canManageLinks = true;
-          }
-        } catch (e) {
-          // Error silencioso
-        }
-      }
-
-      // Si no es propietario, verificar si es editor/organizador
-      if (!canManageLinks) {
-        final userRole = await getUserRole(guideId);
-        if (userRole['role'] == 'editor') {
-          canManageLinks = true;
-        }
-      }
-
-      if (!canManageLinks) {
-        throw Exception(
-            'No tienes permisos para generar links de acceso. Solo propietarios y organizadores pueden hacerlo.');
-      }
-
-      // Generar token único
-      final token = _uuid.v4();
-      final expiresAt = DateTime.now().add(const Duration(days: 7));
-
-      // Guardar el link en Firestore - CORREGIDO: no guardar el campo 'token' duplicado
-      await _retryFirestoreOperation(() => _firestore
-              .collection('guides')
-              .doc(guideId)
-              .collection('accessLinks')
-              .doc(token)
-              .set({
-            'role': role,
-            'createdBy': user.uid,
-            'createdAt': FieldValue.serverTimestamp(),
-            'expiresAt': Timestamp.fromDate(expiresAt),
-            'isActive': true,
-          }));
-
-      // Construir el link de acceso usando tu API
-      final accessLink =
-          'https://api.tourifyapp.es/collaborators/join/$guideId?token=$token';
-
-      return {
-        'link': accessLink,
-        'role': role,
-        'expiresAt': expiresAt,
-        'token': token, // Añadir el token aquí para referencia
-      };
-    } catch (e) {
-      // Error silencioso
-      rethrow;
+  // Obtener links de acceso activos desde el backend
+  Future<List<Map<String, dynamic>>> getActiveAccessLinks(
+      String guideId) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Usuario no autenticado');
+    final idToken = await user.getIdToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl/collaborators/active-links/$guideId'),
+      headers: {
+        'Authorization': 'Bearer $idToken',
+        'Content-Type': 'application/json',
+      },
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return List<Map<String, dynamic>>.from(data['links'] ?? []);
+    } else {
+      throw Exception('Error al obtener links de acceso: ${response.body}');
     }
   }
 
-  // Verificar un link de acceso
+  // Generar un link de acceso para una guía (solo vía backend)
+  Future<Map<String, dynamic>> generateAccessLink(
+      String guideId, String role) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Usuario no autenticado');
+    final idToken = await user.getIdToken();
+    final response = await http.post(
+      Uri.parse('$baseUrl/collaborators/generate-link'),
+      headers: {
+        'Authorization': 'Bearer $idToken',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'guideId': guideId,
+        'role': role,
+      }),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final result = json.decode(response.body);
+      return result['link'] as Map<String, dynamic>;
+    } else {
+      throw Exception('Error al generar link de acceso: ${response.body}');
+    }
+  }
+
+  // Revocar un link de acceso (solo vía backend)
+  Future<void> revokeAccessLink(String guideId, String token) async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Usuario no autenticado');
+    final idToken = await user.getIdToken();
+    final response = await http.post(
+      Uri.parse('$baseUrl/collaborators/revoke-link'),
+      headers: {
+        'Authorization': 'Bearer $idToken',
+        'Content-Type': 'application/json',
+      },
+      body: json.encode({
+        'guideId': guideId,
+        'token': token,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Error al revocar link de acceso: ${response.body}');
+    }
+  }
+
+  // Verificar un link de acceso y unirse como colaborador
   Future<bool> verifyAccessLink(String guideId, String token) async {
     try {
       final user = _auth.currentUser;
@@ -503,165 +485,44 @@ class CollaboratorsService {
         throw Exception('Usuario no autenticado');
       }
 
-      print('Verificando link de acceso para guía: $guideId, token: $token');
+      print(
+          'Verificando link de acceso y uniéndose como colaborador - Token: $token');
 
-      // Usar reintento para operaciones de Firestore
-      final linkDoc = await _retryFirestoreOperation(() async {
-        return await _firestore
-            .collection('guides')
-            .doc(guideId)
-            .collection('accessLinks')
-            .doc(token)
-            .get();
+      // Usar el endpoint del servidor para verificar y unirse
+      final idToken = await user.getIdToken();
+
+      final response = await _retryFirestoreOperation(() async {
+        final httpResponse = await http.post(
+          Uri.parse('$baseUrl/collaborators/verify-and-join'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $idToken',
+          },
+          body: json.encode({
+            'token': token,
+          }),
+        );
+
+        if (httpResponse.statusCode == 200) {
+          final data = json.decode(httpResponse.body);
+          print('Respuesta del servidor: ${data['message']}');
+          return data;
+        } else if (httpResponse.statusCode == 410) {
+          throw Exception('Link expirado');
+        } else if (httpResponse.statusCode == 404) {
+          throw Exception('Token no válido o link inactivo');
+        } else {
+          final errorData = json.decode(httpResponse.body);
+          throw Exception(errorData['error'] ?? 'Error al unirse a la guía');
+        }
       });
 
-      if (!linkDoc.exists) {
-        print('Error: Link de acceso no encontrado');
-        return false;
-      }
-
-      final linkData = linkDoc.data()!;
-
-      // Verificar que el link está activo y no ha expirado
-      final isActive = linkData['isActive'] ?? false;
-      final expiresAt = linkData['expiresAt'] as Timestamp?;
-      final isExpired = expiresAt?.toDate().isBefore(DateTime.now()) ?? true;
-
-      print('Link status - isActive: $isActive, isExpired: $isExpired');
-
-      if (!isActive || isExpired) {
-        print('Error: Link inactivo o expirado');
-        return false;
-      }
-
-      // Verificar si el usuario ya es colaborador de esta guía
-      final existingRole =
-          await _retryFirestoreOperation(() => getUserRole(guideId));
-      if (existingRole['role'] != 'none' && existingRole['role'] != null) {
-        print('Usuario ya es colaborador con rol: ${existingRole['role']}');
-        return true; // Ya es colaborador, considerarlo como éxito
-      }
-
-      // Agregar al usuario como colaborador
-      print('Agregando usuario como colaborador con rol: ${linkData['role']}');
-      await _retryFirestoreOperation(() => addCollaborator(
-            guideId: guideId,
-            email: user.email!,
-            role: linkData['role'],
-          ));
-
-      // NO desactivar el link después de usarlo - permitir múltiples usos hasta expirar
-      // await linkDoc.reference.update({'isActive': false});
-
-      print('Usuario agregado exitosamente como colaborador');
+      print(
+          'Usuario agregado exitosamente como colaborador usando el servidor');
       return true;
     } catch (e) {
       print('Error en verifyAccessLink: $e');
       // Re-lanzar la excepción para que pueda ser manejada por el llamador
-      rethrow;
-    }
-  }
-
-  // Obtener links de acceso activos
-  Future<List<Map<String, dynamic>>> getActiveAccessLinks(
-      String guideId) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('Usuario no autenticado');
-      }
-
-      // Solo comprobar que la guía existe
-      final guideDoc = await _firestore.collection('guides').doc(guideId).get();
-      if (!guideDoc.exists) {
-        throw Exception('La guía no existe');
-      }
-
-      // Obtener links activos
-      final linksSnapshot = await _firestore
-          .collection('guides')
-          .doc(guideId)
-          .collection('accessLinks')
-          .where('isActive', isEqualTo: true)
-          .get();
-
-      return linksSnapshot.docs.map((doc) {
-        final data = doc.data();
-        final token = doc.id; // CORREGIDO: usar el ID del documento como token
-        return {
-          'token': token,
-          'role': data['role'],
-          'createdAt': data['createdAt'],
-          'expiresAt': data['expiresAt'],
-          'createdBy': data['createdBy'],
-          'link':
-              'https://api.tourifyapp.es/collaborators/join/$guideId?token=$token',
-        };
-      }).toList();
-    } catch (e) {
-      // Error silencioso
-      rethrow;
-    }
-  }
-
-  // Revocar un link de acceso
-  Future<void> revokeAccessLink(String guideId, String token) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('Usuario no autenticado');
-      }
-
-      // Verificar que el usuario tiene permisos para revocar links
-      final guideDoc = await _firestore.collection('guides').doc(guideId).get();
-      if (!guideDoc.exists) {
-        throw Exception('La guía no existe');
-      }
-
-      final guideData = guideDoc.data()!;
-
-      // Verificar si el usuario tiene permisos para revocar links (propietario o editor)
-      bool canManageLinks = false;
-
-      // Verificar si es el propietario
-      if (guideData['userId'] == user.uid) {
-        canManageLinks = true;
-      } else if (guideData['authorId'] == user.uid) {
-        canManageLinks = true;
-      } else if (guideData['userRef'] != null) {
-        try {
-          final userRef = guideData['userRef'] as DocumentReference;
-          final expectedUserRef = _firestore.collection('users').doc(user.uid);
-          if (userRef.path == expectedUserRef.path) {
-            canManageLinks = true;
-          }
-        } catch (e) {
-          // Error silencioso
-        }
-      }
-
-      // Si no es propietario, verificar si es editor/organizador
-      if (!canManageLinks) {
-        final userRole = await getUserRole(guideId);
-        if (userRole['role'] == 'editor') {
-          canManageLinks = true;
-        }
-      }
-
-      if (!canManageLinks) {
-        throw Exception(
-            'No tienes permisos para revocar links de acceso. Solo propietarios y organizadores pueden hacerlo.');
-      }
-
-      // Desactivar el link
-      await _firestore
-          .collection('guides')
-          .doc(guideId)
-          .collection('accessLinks')
-          .doc(token)
-          .update({'isActive': false});
-    } catch (e) {
-      // Error silencioso
       rethrow;
     }
   }

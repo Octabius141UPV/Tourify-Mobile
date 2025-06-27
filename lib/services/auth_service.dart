@@ -267,9 +267,28 @@ class AuthService {
   static Future<bool> hasStoredCredentials() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.containsKey('saved_email') &&
-          prefs.containsKey('saved_password');
+      final hasEmail = prefs.containsKey('saved_email');
+      final hasPassword = prefs.containsKey('saved_password');
+      final savedEmail = prefs.getString('saved_email');
+      final savedPassword = prefs.getString('saved_password');
+
+      print('🔍 Debug credenciales:');
+      print('  - hasEmail: $hasEmail');
+      print('  - hasPassword: $hasPassword');
+      print(
+          '  - savedEmail: ${savedEmail != null ? "✅ SÍ (${savedEmail.substring(0, 3)}...)" : "❌ NO"}');
+      print(
+          '  - savedPassword: ${savedPassword != null ? "✅ SÍ (${savedPassword.length} chars)" : "❌ NO"}');
+
+      final result = hasEmail &&
+          hasPassword &&
+          savedEmail != null &&
+          savedPassword != null;
+      print('  - Resultado final: $result');
+
+      return result;
     } catch (e) {
+      print('❌ Error en hasStoredCredentials: $e');
       return false;
     }
   }

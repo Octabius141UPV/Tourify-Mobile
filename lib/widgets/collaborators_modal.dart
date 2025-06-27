@@ -125,16 +125,16 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
     });
   }
 
-  Future<void> _revokeAccessLink(String token) async {
+  Future<void> _removeAccessLink(String token) async {
     try {
       await _collaboratorsService.revokeAccessLink(widget.guideId, token);
       await _loadAccessLinks();
       if (mounted) {
-        _showMessage('Link de acceso revocado correctamente');
+        _showMessage('Link de acceso eliminado correctamente');
       }
     } catch (e) {
       if (mounted) {
-        _showMessage('Error al revocar link de acceso', isError: true);
+        _showMessage('Error al eliminar link de acceso', isError: true);
       }
     }
   }
@@ -322,6 +322,19 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
       default:
         return 'Rol desconocido';
     }
+  }
+
+  // Helper para parsear Timestamps serializados desde backend
+  Timestamp? _parseTimestamp(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value;
+    if (value is Map && value.containsKey('_seconds')) {
+      return Timestamp(value['_seconds'], value['_nanoseconds'] ?? 0);
+    }
+    if (value is Map && value.containsKey('seconds')) {
+      return Timestamp(value['seconds'], value['nanoseconds'] ?? 0);
+    }
+    return null;
   }
 
   @override
@@ -708,8 +721,8 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
   Widget _buildAccessLinkItem(Map<String, dynamic> link, bool isLast) {
     final token = link['token'] as String? ?? '';
     final role = link['role'] as String? ?? 'viewer';
-    final createdAt = link['createdAt'] as Timestamp?;
-    final expiresAt = link['expiresAt'] as Timestamp?;
+    final createdAt = _parseTimestamp(link['createdAt']);
+    final expiresAt = _parseTimestamp(link['expiresAt']);
     final linkUrl = link['link'] as String? ?? '';
 
     final roleColor = _getRoleColor(role);
@@ -831,12 +844,12 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Botón revocar (solo si puede gestionar links)
+                  // Botón eliminar (solo si puede gestionar links)
                   if (_canManageLinks())
                     CupertinoButton(
                       padding: EdgeInsets.zero,
                       minSize: 32,
-                      onPressed: () => _showRevokeAccessLinkDialog(token),
+                      onPressed: () => _showRemoveAccessLinkDialog(token),
                       child: Container(
                         width: 32,
                         height: 32,
@@ -860,13 +873,13 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
     );
   }
 
-  void _showRevokeAccessLinkDialog(String token) {
+  void _showRemoveAccessLinkDialog(String token) {
     showCupertinoDialog(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: const Text('Revocar link de acceso'),
+        title: const Text('Eliminar link de acceso'),
         content: const Text(
-            '¿Estás seguro de que quieres revocar este link? Ya no funcionará para nuevos usuarios.'),
+            '¿Estás seguro de que quieres eliminar este link? Ya no funcionará para nuevos usuarios.'),
         actions: [
           CupertinoDialogAction(
             child: const Text('Cancelar'),
@@ -876,9 +889,9 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
             isDestructiveAction: true,
             onPressed: () {
               Navigator.of(context).pop();
-              _revokeAccessLink(token);
+              _removeAccessLink(token);
             },
-            child: const Text('Revocar'),
+            child: const Text('Eliminar'),
           ),
         ],
       ),
@@ -996,7 +1009,7 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
     final email = collaborator['email'] as String? ?? 'Email desconocido';
     final role = collaborator['role'] as String? ?? 'viewer';
     final displayName = collaborator['displayName'] as String?;
-    final joinedAt = collaborator['joinedAt'] as Timestamp?;
+    final joinedAt = _parseTimestamp(collaborator['joinedAt']);
 
     final roleColor = _getRoleColor(role);
     final roleIcon = _getRoleIcon(role);
@@ -1138,16 +1151,30 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
 
     if (difference.inDays == 0) {
       return 'hoy';
+    } else if (difference.isNegative) {
+      // Fecha futura
+      final days = difference.inDays.abs();
+      if (days == 1) {
+        return 'en 1 día';
+      } else if (days < 7) {
+        return 'en $days días';
+      } else if (days < 30) {
+        final weeks = (days / 7).floor();
+        return 'en $weeks semana${weeks > 1 ? 's' : ''}';
+      } else {
+        final months = (days / 30).floor();
+        return 'en $months mes${months > 1 ? 'es' : ''}';
+      }
     } else if (difference.inDays == 1) {
       return 'ayer';
     } else if (difference.inDays < 7) {
       return 'hace ${difference.inDays} días';
     } else if (difference.inDays < 30) {
       final weeks = (difference.inDays / 7).floor();
-      return 'hace ${weeks} semana${weeks > 1 ? 's' : ''}';
+      return 'hace $weeks semana${weeks > 1 ? 's' : ''}';
     } else {
       final months = (difference.inDays / 30).floor();
-      return 'hace ${months} mes${months > 1 ? 'es' : ''}';
+      return 'hace $months mes${months > 1 ? 'es' : ''}';
     }
   }
 

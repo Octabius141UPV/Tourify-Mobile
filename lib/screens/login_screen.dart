@@ -133,6 +133,16 @@ class _LoginScreenState extends State<LoginScreen> {
           await AuthService.clearRememberedCredentials();
         }
 
+        // Si hay biometría disponible, siempre guardar credenciales para Face ID
+        // (independientemente de "Recordarme")
+        if (_isBiometricAvailable) {
+          await AuthService.saveCredentialsForRememberMe(
+            _emailController.text.trim(),
+            _passwordController.text,
+          );
+          print('✅ Credenciales guardadas para biometría');
+        }
+
         Navigator.pushAndRemoveUntil(
           context,
           PageRouteBuilder(
@@ -558,7 +568,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           FutureBuilder<bool>(
                             future: AuthService.hasStoredCredentials(),
                             builder: (context, snapshot) {
+                              print(
+                                  '🔍 Debug biometría - hasStoredCredentials: ${snapshot.data}');
                               if (snapshot.data == true) {
+                                print('✅ Mostrando botón de biometría');
                                 return Column(
                                   children: [
                                     SizedBox(
@@ -606,6 +619,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     const SizedBox(height: 24),
                                   ],
                                 );
+                              } else {
+                                print(
+                                    '❌ No hay credenciales guardadas - botón de biometría oculto');
                               }
                               return const SizedBox.shrink();
                             },
