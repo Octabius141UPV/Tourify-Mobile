@@ -415,6 +415,11 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
 
                       const SizedBox(height: 32),
 
+                      // Sección de links activos
+                      _buildActiveLinks(),
+
+                      const SizedBox(height: 24),
+
                       // Sección de colaboradores actuales
                       _buildCurrentCollaborators(),
                     ],
@@ -541,6 +546,284 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildActiveLinks() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              CupertinoIcons.link,
+              color: CupertinoColors.systemPurple.resolveFrom(context),
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Links de acceso activos',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.label.resolveFrom(context),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: CupertinoColors.systemPurple.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_accessLinks.length}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: CupertinoColors.systemPurple,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_accessLinks.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemGrey6.resolveFrom(context),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  CupertinoIcons.link_circle,
+                  size: 40,
+                  color: CupertinoColors.systemGrey.resolveFrom(context),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'No hay links activos',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: CupertinoColors.systemGrey.resolveFrom(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Genera un link para compartir acceso',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: CupertinoColors.systemGrey2.resolveFrom(context),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemBackground.resolveFrom(context),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: CupertinoColors.separator.resolveFrom(context),
+                width: 0.5,
+              ),
+            ),
+            child: Column(
+              children: _accessLinks.asMap().entries.map((entry) {
+                final index = entry.key;
+                final link = entry.value;
+                final isLast = index == _accessLinks.length - 1;
+
+                return _buildAccessLinkItem(link, isLast);
+              }).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildAccessLinkItem(Map<String, dynamic> link, bool isLast) {
+    final token = link['token'] as String? ?? '';
+    final role = link['role'] as String? ?? 'viewer';
+    final createdAt = link['createdAt'] as Timestamp?;
+    final expiresAt = link['expiresAt'] as Timestamp?;
+    final linkUrl = link['link'] as String? ?? '';
+
+    final roleColor = _getRoleColor(role);
+    final roleIcon = _getRoleIcon(role);
+    final roleDisplayName = _getRoleDisplayName(role);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : Border(
+                bottom: BorderSide(
+                  color: CupertinoColors.separator.resolveFrom(context),
+                  width: 0.5,
+                ),
+              ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: roleColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(
+                  roleIcon,
+                  color: roleColor,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Link de ${roleDisplayName.toLowerCase()}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: roleColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                roleIcon,
+                                size: 12,
+                                color: roleColor,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                roleDisplayName,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: roleColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (expiresAt != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            'Expira ${_formatDate(expiresAt.toDate())}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: CupertinoColors.secondaryLabel
+                                  .resolveFrom(context),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Botones de acción
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Botón copiar
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 32,
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: linkUrl));
+                      _showMessage('Link copiado al portapapeles');
+                    },
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        CupertinoIcons.doc_on_clipboard,
+                        color: CupertinoColors.systemBlue,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Botón revocar
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
+                    minSize: 32,
+                    onPressed: () => _showRevokeAccessLinkDialog(token),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: CupertinoColors.systemRed.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        CupertinoIcons.xmark_circle_fill,
+                        color: CupertinoColors.systemRed,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRevokeAccessLinkDialog(String token) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Revocar link de acceso'),
+        content: const Text(
+            '¿Estás seguro de que quieres revocar este link? Ya no funcionará para nuevos usuarios.'),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('Cancelar'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.of(context).pop();
+              _revokeAccessLink(token);
+            },
+            child: const Text('Revocar'),
+          ),
+        ],
       ),
     );
   }

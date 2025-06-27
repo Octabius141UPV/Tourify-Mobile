@@ -200,9 +200,9 @@ class ImageService {
 
         // Día 2 - Berlín - URLs verificadas
         'berlín_muro de berlín':
-            'https://images.unsplash.com/photo-1675935227009-dac2f276cfbd?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTN8fEJlcmxpbiUyMFVudGVyJTIwZGVuJTIwTGluZGVufGVufDB8fDB8fHwy',
+            'https://images.unsplash.com/photo-1561617398-f5b36165c26a?q=80&w=1374&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
         'berlin_muro de berlín':
-            'https://images.unsplash.com/photo-1675935227009-dac2f276cfbd?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHhzZWFyY2h8MTN8fEJlcmxpbiUyMFVudGVyJTIwZGVuJTIwTGluZGVufGVufDB8fDB8fHwy',
+            'https://images.unsplash.com/photo-1561617398-f5b36165c26a?q=80&w=1374&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
         'berlín_checkpoint charlie':
             'https://images.unsplash.com/photo-1559116284-9c57b7a01f7a?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
         'berlin_checkpoint charlie':

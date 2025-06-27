@@ -411,14 +411,13 @@ class CollaboratorsService {
       final token = _uuid.v4();
       final expiresAt = DateTime.now().add(const Duration(days: 7));
 
-      // Guardar el link en Firestore
+      // Guardar el link en Firestore - CORREGIDO: no guardar el campo 'token' duplicado
       await _firestore
           .collection('guides')
           .doc(guideId)
           .collection('accessLinks')
           .doc(token)
           .set({
-        'token': token,
         'role': role,
         'createdBy': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
@@ -434,6 +433,7 @@ class CollaboratorsService {
         'link': accessLink,
         'role': role,
         'expiresAt': expiresAt,
+        'token': token, // Añadir el token aquí para referencia
       };
     } catch (e) {
       // Error silencioso
@@ -531,13 +531,15 @@ class CollaboratorsService {
 
       return linksSnapshot.docs.map((doc) {
         final data = doc.data();
+        final token = doc.id; // CORREGIDO: usar el ID del documento como token
         return {
-          'token': data['token'],
+          'token': token,
           'role': data['role'],
           'createdAt': data['createdAt'],
           'expiresAt': data['expiresAt'],
+          'createdBy': data['createdBy'],
           'link':
-              'https://api.tourifyapp.es/collaborators/join/$guideId?token=${data['token']}',
+              'https://api.tourifyapp.es/collaborators/join/$guideId?token=$token',
         };
       }).toList();
     } catch (e) {
