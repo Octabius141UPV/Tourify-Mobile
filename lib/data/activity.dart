@@ -77,6 +77,7 @@ class Activity {
 
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'title': title,
       'description': description,
       'duration': duration,
