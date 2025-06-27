@@ -18,7 +18,7 @@ class EmailValidator {
     'monmail.fr.nf',
     'hide.biz.st',
     'mymail.infos.st',
-    
+
     // 10 Minute Mail
     '10minutemail.com',
     '10minutemail.net',
@@ -26,7 +26,7 @@ class EmailValidator {
     '10minutemail.co.uk',
     'tempail.com',
     'tempmail.eu',
-    
+
     // Guerrilla Mail
     'guerrillamail.info',
     'guerrillamail.biz',
@@ -41,7 +41,7 @@ class EmailValidator {
     'bccto.me',
     'chacuo.net',
     'guerrillamailblock.com',
-    
+
     // Mailinator
     'mailinator.com',
     'mailinator.net',
@@ -60,7 +60,7 @@ class EmailValidator {
     'inboxalias.com',
     'beefmilk.com',
     'tradermail.info',
-    
+
     // TempMail
     'tempmail.org',
     'temp-mail.org',
@@ -76,12 +76,12 @@ class EmailValidator {
     'temp-inbox.com',
     'mailnesia.com',
     'tempail.net',
-    
+
     // Mohmal
     'mohmal.com',
     'mohmal.in',
     'mohmal.tech',
-    
+
     // ThrowAwayMail
     'throwawaymail.com',
     'throwawaymails.com',
@@ -90,7 +90,7 @@ class EmailValidator {
     'moakt.com',
     'moakt.cc',
     'dispostable.com',
-    
+
     // Otros servicios populares
     'maildrop.cc',
     'tempsky.com',
@@ -257,7 +257,8 @@ class EmailValidator {
     if (_temporaryEmailDomains.contains(domain)) {
       return EmailValidationResult(
         isValid: false,
-        error: 'No se permiten emails temporales o desechables.\nPor favor, usa un email permanente.',
+        error:
+            'No se permiten emails temporales o desechables.\nPor favor, usa un email permanente.',
         isTemporary: true,
       );
     }
@@ -287,7 +288,8 @@ class EmailValidator {
   }
 
   /// Lista de dominios temporales para uso externo si es necesario
-  static List<String> get temporaryDomains => List.unmodifiable(_temporaryEmailDomains);
+  static List<String> get temporaryDomains =>
+      List.unmodifiable(_temporaryEmailDomains);
 }
 
 /// Resultado de la validación de email

@@ -75,7 +75,7 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
 
   Future<void> _addCollaborator(String role) async {
     final email = _emailController.text.trim();
-    
+
     // Validar email usando el nuevo validador
     final validation = EmailValidator.validateEmail(email);
     if (!validation.isValid) {

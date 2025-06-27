@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourify_flutter/screens/verify_email_screen.dart';
 import 'package:tourify_flutter/screens/login_screen.dart';
-import 'package:tourify_flutter/screens/home_screen.dart';
 import '../utils/email_validator.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -96,6 +95,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!emailRegex.hasMatch(_emailController.text.trim())) {
       setState(() {
         _error = 'Por favor, ingresa un correo electrónico válido.';
+      });
+      return;
+    }
+
+    // Validación de email temporal
+    final emailValidationResult =
+        EmailValidator.validateEmail(_emailController.text.trim());
+    if (!emailValidationResult.isValid) {
+      setState(() {
+        _error = emailValidationResult.error!;
       });
       return;
     }
