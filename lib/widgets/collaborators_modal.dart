@@ -41,6 +41,22 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
     _tabController = TabController(length: 3, vsync: this);
     _loadCollaborators();
     _loadAccessLinks();
+
+    // Forzar actualización del rol cada vez que se abre el modal
+    _refreshUserRole();
+  }
+
+  Future<void> _refreshUserRole() async {
+    try {
+      final userRoleResponse =
+          await _collaboratorsService.getUserRole(widget.guideId);
+      setState(() {
+        _userRole = userRoleResponse['role'] as String?;
+      });
+      print('Rol del usuario actualizado: $_userRole');
+    } catch (e) {
+      print('Error al actualizar rol del usuario: $e');
+    }
   }
 
   @override
@@ -63,12 +79,25 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
   }
 
   Future<void> _generateAccessLink() async {
+    // Verificar permisos antes de generar
+    if (!_canManageLinks()) {
+      _showMessage(
+          'No tienes permisos para generar links de acceso.\n\nSolo propietarios y organizadores pueden crear links.',
+          isError: true);
+      return;
+    }
+
     setState(() {
       _isGeneratingLink = true;
       _error = null;
     });
 
     try {
+      print('=== GENERANDO LINK ===');
+      print('Rol del usuario: $_userRole');
+      print('Rol del link: $_selectedRole');
+      print('¿Puede gestionar links? ${_canManageLinks()}');
+
       final result = await _collaboratorsService.generateAccessLink(
           widget.guideId, _selectedRole);
       await _loadAccessLinks();
@@ -77,15 +106,19 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
         final String? link = result['link'] as String?;
         if (link != null) {
           await Clipboard.setData(ClipboardData(text: link));
+          final roleText =
+              _selectedRole == 'editor' ? 'organizador' : 'acoplado';
           _showMessage(
-              '✅ Link generado y copiado al portapapeles\n\nComparte este link para que otros se unan a tu guía:\n$link');
+              '✅ Link de $roleText generado y copiado\n\nQuien use este link será $roleText automáticamente\n\n$link');
         } else {
           _showMessage('Link de acceso generado correctamente');
         }
       }
     } catch (e) {
+      print('Error al generar link: $e');
       if (mounted) {
-        _showMessage('Error al generar link de acceso', isError: true);
+        _showMessage('Error al generar link de acceso: ${e.toString()}',
+            isError: true);
       }
     } finally {
       setState(() {
@@ -133,6 +166,20 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
         _collaborators = collaboratorsList;
         _isLoading = false;
       });
+
+      // Logging para depuración
+      print('=== COLABORADORES MODAL DEBUG ===');
+      print('Rol del usuario actual: $_userRole');
+      print('¿Puede gestionar links? ${_canManageLinks()}');
+      print('Número de colaboradores: ${_collaborators.length}');
+      if (_userRole == 'editor') {
+        print('✅ Usuario es ORGANIZADOR - debe poder gestionar links');
+      } else if (_userRole == 'owner') {
+        print('✅ Usuario es PROPIETARIO - debe poder gestionar links');
+      } else {
+        print('❌ Usuario es $_userRole - NO puede gestionar links');
+      }
+      print('=================================');
     } catch (e) {
       setState(() {
         _error = 'Error al cargar colaboradores: $e';
@@ -226,6 +273,10 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
   }
 
   bool _canManageCollaborators() {
+    return _userRole == 'owner' || _userRole == 'editor';
+  }
+
+  bool _canManageLinks() {
     return _userRole == 'owner' || _userRole == 'editor';
   }
 
@@ -410,8 +461,8 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
 
                       const SizedBox(height: 24),
 
-                      // Sección de generar link
-                      _buildGenerateLinkSection(),
+                      // Sección de generar link (solo si puede gestionar links)
+                      if (_canManageLinks()) _buildGenerateLinkSection(),
 
                       const SizedBox(height: 32),
 
@@ -775,25 +826,26 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
                     ),
                   ),
                   const SizedBox(width: 8),
-                  // Botón revocar
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    minSize: 32,
-                    onPressed: () => _showRevokeAccessLinkDialog(token),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: CupertinoColors.systemRed.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: const Icon(
-                        CupertinoIcons.xmark_circle_fill,
-                        color: CupertinoColors.systemRed,
-                        size: 16,
+                  // Botón revocar (solo si puede gestionar links)
+                  if (_canManageLinks())
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minSize: 32,
+                      onPressed: () => _showRevokeAccessLinkDialog(token),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: CupertinoColors.systemRed.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          CupertinoIcons.xmark_circle_fill,
+                          color: CupertinoColors.systemRed,
+                          size: 16,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ],

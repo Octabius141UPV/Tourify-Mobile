@@ -385,26 +385,37 @@ class CollaboratorsService {
 
       final guideData = guideDoc.data()!;
 
-      // Verificar si el usuario es el propietario usando la misma lógica que getUserRole
-      bool isOwner = false;
+      // Verificar si el usuario tiene permisos para generar links (propietario o editor)
+      bool canManageLinks = false;
+
+      // Verificar si es el propietario
       if (guideData['userId'] == user.uid) {
-        isOwner = true;
+        canManageLinks = true;
       } else if (guideData['authorId'] == user.uid) {
-        isOwner = true;
+        canManageLinks = true;
       } else if (guideData['userRef'] != null) {
         try {
           final userRef = guideData['userRef'] as DocumentReference;
           final expectedUserRef = _firestore.collection('users').doc(user.uid);
           if (userRef.path == expectedUserRef.path) {
-            isOwner = true;
+            canManageLinks = true;
           }
         } catch (e) {
           // Error silencioso
         }
       }
 
-      if (!isOwner) {
-        throw Exception('No tienes permisos para generar links de acceso');
+      // Si no es propietario, verificar si es editor/organizador
+      if (!canManageLinks) {
+        final userRole = await getUserRole(guideId);
+        if (userRole['role'] == 'editor') {
+          canManageLinks = true;
+        }
+      }
+
+      if (!canManageLinks) {
+        throw Exception(
+            'No tienes permisos para generar links de acceso. Solo propietarios y organizadores pueden hacerlo.');
       }
 
       // Generar token único
@@ -563,8 +574,38 @@ class CollaboratorsService {
       }
 
       final guideData = guideDoc.data()!;
-      if (guideData['userRef'] != user.uid) {
-        throw Exception('No tienes permisos para revocar links de acceso');
+
+      // Verificar si el usuario tiene permisos para revocar links (propietario o editor)
+      bool canManageLinks = false;
+
+      // Verificar si es el propietario
+      if (guideData['userId'] == user.uid) {
+        canManageLinks = true;
+      } else if (guideData['authorId'] == user.uid) {
+        canManageLinks = true;
+      } else if (guideData['userRef'] != null) {
+        try {
+          final userRef = guideData['userRef'] as DocumentReference;
+          final expectedUserRef = _firestore.collection('users').doc(user.uid);
+          if (userRef.path == expectedUserRef.path) {
+            canManageLinks = true;
+          }
+        } catch (e) {
+          // Error silencioso
+        }
+      }
+
+      // Si no es propietario, verificar si es editor/organizador
+      if (!canManageLinks) {
+        final userRole = await getUserRole(guideId);
+        if (userRole['role'] == 'editor') {
+          canManageLinks = true;
+        }
+      }
+
+      if (!canManageLinks) {
+        throw Exception(
+            'No tienes permisos para revocar links de acceso. Solo propietarios y organizadores pueden hacerlo.');
       }
 
       // Desactivar el link
