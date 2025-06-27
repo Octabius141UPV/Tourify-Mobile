@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourify_flutter/screens/home_screen.dart';
 import 'package:tourify_flutter/screens/register_screen.dart';
+import 'package:tourify_flutter/screens/verify_email_screen.dart';
 import 'package:tourify_flutter/services/auth_service.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -121,6 +122,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted && userCredential.user != null) {
         print('Login exitoso: ${userCredential.user?.email}');
+
+        // Verificar si el email está verificado
+        await userCredential.user!.reload();
+        if (!userCredential.user!.emailVerified) {
+          print('❌ Email no verificado, redirigiendo a VerifyEmailScreen');
+
+          Navigator.pushAndRemoveUntil(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const VerifyEmailScreen(),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+            (route) => false,
+          );
+          return;
+        }
+
+        print('✅ Email verificado, continuando con el login');
 
         // Guardar o limpiar credenciales según la opción de recordar
         if (_rememberMe) {
@@ -321,6 +342,83 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleForgotPassword() async {
+    if (_emailController.text.isEmpty) {
+      setState(() {
+        _error =
+            'Por favor, ingresa tu correo electrónico para restablecer la contraseña';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: _emailController.text.trim(),
+      );
+
+      if (mounted) {
+        // Mostrar diálogo de confirmación
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Correo enviado'),
+              content: Text(
+                'Se ha enviado un enlace para restablecer tu contraseña a ${_emailController.text.trim()}.\n\nRevisa tu bandeja de entrada y carpeta de spam.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Entendido'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      print('Error en restablecimiento de contraseña: ${e.code}');
+      String errorMessage;
+
+      switch (e.code) {
+        case 'user-not-found':
+          errorMessage =
+              'No existe ninguna cuenta con este correo electrónico.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'El correo electrónico no es válido.';
+          break;
+        case 'too-many-requests':
+          errorMessage = 'Demasiados intentos. Intenta de nuevo más tarde.';
+          break;
+        default:
+          errorMessage = 'Error al enviar el correo de restablecimiento.';
+      }
+
+      setState(() {
+        _error = errorMessage;
+      });
+    } catch (e) {
+      print('Error en restablecimiento de contraseña: $e');
+      setState(() {
+        _error = 'Error al enviar el correo de restablecimiento.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   Future<void> _loadRememberedCredentials() async {
     try {
       final bool rememberMe = await AuthService.getRememberMeStatus();
@@ -427,39 +525,41 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                         const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Checkbox(
-                              value: _rememberMe,
-                              onChanged: (value) {
-                                setState(() {
-                                  _rememberMe = value ?? false;
-                                });
-                              },
-                              fillColor: MaterialStateProperty.resolveWith(
-                                (states) {
-                                  if (states.contains(MaterialState.selected)) {
-                                    return Colors.white;
-                                  }
-                                  return Colors.transparent;
+                        Center(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Checkbox(
+                                value: _rememberMe,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _rememberMe = value ?? false;
+                                  });
                                 },
+                                fillColor: MaterialStateProperty.resolveWith(
+                                  (states) {
+                                    if (states
+                                        .contains(MaterialState.selected)) {
+                                      return Colors.white;
+                                    }
+                                    return Colors.transparent;
+                                  },
+                                ),
+                                checkColor: const Color(0xFF2563EB),
+                                side: const BorderSide(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
                               ),
-                              checkColor: const Color(0xFF2563EB),
-                              side: const BorderSide(
-                                color: Colors.white,
-                                width: 2,
-                              ),
-                            ),
-                            const Expanded(
-                              child: Text(
+                              const Text(
                                 'Recordar mi sesión',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 16,
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 16),
                         SizedBox(
@@ -469,12 +569,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
                               foregroundColor: Colors.black87,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(color: Colors.black87),
+                                side: const BorderSide(color: Colors.black87),
                               ),
                               elevation: 0,
+                              shadowColor: Colors.transparent,
                             ),
                             child: _isLoading
                                 ? const Row(
@@ -488,7 +589,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           strokeWidth: 2,
                                         ),
                                       ),
-                                      SizedBox(width: 8),
+                                      SizedBox(width: 12),
                                       Text(
                                         'Iniciando sesión...',
                                         style: TextStyle(
@@ -508,7 +609,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
+                        // Enlace de "¿Olvidaste tu contraseña?" - centrado
+                        Center(
+                          child: TextButton(
+                            onPressed:
+                                _isLoading ? null : _handleForgotPassword,
+                            child: const Text(
+                              '¿Olvidaste tu contraseña?',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                decoration: TextDecoration.underline,
+                                decorationColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         Row(
                           children: [
                             Expanded(
@@ -593,6 +711,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                             : const Icon(
                                                 Icons.face,
                                                 size: 24,
+                                                color: Colors.black87,
                                               ),
                                         label: Text(
                                           _isBiometricLoading
@@ -601,6 +720,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                           style: const TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
                                           ),
                                         ),
                                         style: ElevatedButton.styleFrom(
@@ -611,6 +731,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                           shape: RoundedRectangleBorder(
                                             borderRadius:
                                                 BorderRadius.circular(12),
+                                            side: const BorderSide(
+                                                color: Colors.black87),
                                           ),
                                           elevation: 0,
                                         ),

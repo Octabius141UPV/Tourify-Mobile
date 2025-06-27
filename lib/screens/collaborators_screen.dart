@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/collaborators_service.dart';
+import '../utils/email_validator.dart';
 
 class CollaboratorsScreen extends StatefulWidget {
   final String guideId;
@@ -74,9 +75,12 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
 
   Future<void> _addCollaborator(String role) async {
     final email = _emailController.text.trim();
-    if (email.isEmpty) {
+    
+    // Validar email usando el nuevo validador
+    final validation = EmailValidator.validateEmail(email);
+    if (!validation.isValid) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, introduce un email')),
+        SnackBar(content: Text(validation.error!)),
       );
       return;
     }

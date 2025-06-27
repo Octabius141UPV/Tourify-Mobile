@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourify_flutter/screens/login_screen.dart';
 import 'package:tourify_flutter/screens/home_screen.dart';
 
@@ -11,26 +12,100 @@ class VerifyEmailScreen extends StatefulWidget {
 
 class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
   bool _isLoading = false;
+  bool _isCheckingVerification = false;
   String? _error;
+  String? _message;
+  User? _currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentUser = FirebaseAuth.instance.currentUser;
+  }
+
+  Future<void> _handleCheckVerification() async {
+    setState(() {
+      _isCheckingVerification = true;
+      _error = null;
+      _message = null;
+    });
+
+    try {
+      if (_currentUser == null) {
+        setState(() {
+          _error = 'No hay usuario autenticado';
+        });
+        return;
+      }
+
+      // Recargar el estado del usuario
+      await _currentUser!.reload();
+      _currentUser = FirebaseAuth.instance.currentUser;
+
+      if (_currentUser!.emailVerified) {
+        setState(() {
+          _message = '¡Email verificado correctamente!';
+        });
+
+        // Esperar un momento y navegar al home
+        await Future.delayed(const Duration(seconds: 2));
+
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const HomeScreen(),
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+            ),
+            (route) => false,
+          );
+        }
+      } else {
+        setState(() {
+          _error =
+              'El email aún no ha sido verificado. Por favor, revisa tu correo y haz clic en el enlace de verificación.';
+        });
+      }
+    } catch (e) {
+      print('Error verificando email: $e');
+      setState(() {
+        _error = 'Error al verificar el estado del email';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingVerification = false;
+        });
+      }
+    }
+  }
 
   Future<void> _handleResendVerification() async {
     setState(() {
       _isLoading = true;
       _error = null;
+      _message = null;
     });
 
     try {
-      // TODO: Implementar lógica de reenvío de verificación con Firebase
-      await Future.delayed(const Duration(seconds: 2)); // Simulación de reenvío
+      if (_currentUser == null) {
+        setState(() {
+          _error = 'No hay usuario autenticado';
+        });
+        return;
+      }
+
+      await _currentUser!.sendEmailVerification();
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Correo de verificación reenviado'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        setState(() {
+          _message = 'Correo de verificación reenviado correctamente';
+        });
       }
     } catch (e) {
+      print('Error reenviando correo: $e');
       setState(() {
         _error =
             'Error al reenviar el correo de verificación. Intenta de nuevo más tarde.';
@@ -94,6 +169,36 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                           ),
                           textAlign: TextAlign.center,
                         ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.amber),
+                          ),
+                          child: const Column(
+                            children: [
+                              Text(
+                                '¡Importante!',
+                                style: TextStyle(
+                                  color: Colors.amber,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'No podrás iniciar sesión en Tourify hasta que verifiques tu correo electrónico.',
+                                style: TextStyle(
+                                  color: Colors.amber,
+                                  fontSize: 14,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
                         if (_error != null) ...[
                           const SizedBox(height: 16),
                           Container(
@@ -110,7 +215,71 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                             ),
                           ),
                         ],
+                        if (_message != null) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green),
+                            ),
+                            child: Text(
+                              _message!,
+                              style: const TextStyle(color: Colors.green),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 32),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isCheckingVerification
+                                ? null
+                                : _handleCheckVerification,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.withOpacity(0.2),
+                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                side: const BorderSide(color: Colors.blue),
+                              ),
+                            ),
+                            child: _isCheckingVerification
+                                ? const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Verificando...',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : const Text(
+                                    'Verificar email',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -165,7 +334,7 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                               PageRouteBuilder(
                                 pageBuilder:
                                     (context, animation, secondaryAnimation) =>
-                                        const HomeScreen(),
+                                        const LoginScreen(),
                                 transitionDuration: Duration.zero,
                                 reverseTransitionDuration: Duration.zero,
                               ),
@@ -179,6 +348,15 @@ class _VerifyEmailScreenState extends State<VerifyEmailScreen> {
                               decoration: TextDecoration.underline,
                             ),
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          '¿No recibiste el correo? Revisa tu carpeta de spam',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ],
                     ),

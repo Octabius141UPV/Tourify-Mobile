@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourify_flutter/screens/verify_email_screen.dart';
 import 'package:tourify_flutter/screens/login_screen.dart';
 import 'package:tourify_flutter/screens/home_screen.dart';
+import '../utils/email_validator.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -21,38 +22,108 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   final Map<String, String> _firebaseErrorMessages = {
     'auth/email-already-in-use':
-        'Ya existe una cuenta con este correo electrónico.',
-    'auth/invalid-email': 'El correo electrónico no es válido.',
+        'Ya existe una cuenta con este correo electrónico. ¿Quieres iniciar sesión en su lugar?',
+    'auth/invalid-email': 'El formato del correo electrónico no es válido.',
     'auth/operation-not-allowed':
-        'El registro está deshabilitado temporalmente.',
-    'auth/weak-password': 'La contraseña es demasiado débil.',
+        'El registro con email/contraseña está deshabilitado temporalmente.',
+    'auth/weak-password':
+        'La contraseña es demasiado débil. Debe tener al menos 6 caracteres.',
     'auth/network-request-failed':
-        'Error de red. Revisa tu conexión a internet.',
+        'Error de conexión. Verifica tu conexión a internet e intenta de nuevo.',
     'auth/internal-error':
-        'Error interno del servidor. Intenta de nuevo más tarde.',
+        'Error interno del servidor. Por favor, intenta de nuevo más tarde.',
+    'auth/too-many-requests':
+        'Demasiados intentos fallidos. Intenta de nuevo más tarde.',
+    'auth/user-disabled':
+        'Esta cuenta ha sido deshabilitada por un administrador.',
+    'auth/requires-recent-login':
+        'Esta operación requiere una autenticación reciente. Por favor, inicia sesión de nuevo.',
+    'auth/credential-already-in-use':
+        'Esta credencial ya está asociada con otra cuenta de usuario.',
+    'auth/invalid-credential':
+        'Las credenciales proporcionadas son incorrectas o han expirado.',
+    'auth/account-exists-with-different-credential':
+        'Ya existe una cuenta con el mismo correo pero con un proveedor de autenticación diferente.',
+    'auth/auth-domain-config-required':
+        'Error de configuración. Por favor, contacta al soporte técnico.',
+    'auth/cancelled-popup-request':
+        'Solicitud cancelada. Solo se permite una solicitud de ventana emergente a la vez.',
+    'auth/popup-blocked':
+        'La ventana emergente fue bloqueada por el navegador. Por favor, permite ventanas emergentes para este sitio.',
+    'auth/popup-closed-by-user':
+        'La ventana emergente fue cerrada antes de completar la operación.',
+    'auth/unauthorized-domain':
+        'Este dominio no está autorizado para esta operación.',
+    'auth/user-token-expired':
+        'La sesión del usuario ha expirado. Por favor, inicia sesión de nuevo.',
+    'auth/invalid-api-key':
+        'Error de configuración de la API. Por favor, contacta al soporte técnico.',
+    'auth/app-deleted':
+        'Esta instancia de la aplicación Firebase ha sido eliminada.',
+    'auth/invalid-user-token':
+        'El token del usuario no es válido. Por favor, inicia sesión de nuevo.',
+    'auth/user-not-found':
+        'No se encontró ningún usuario con estas credenciales.',
+    'auth/invalid-tenant-id': 'El ID del inquilino proporcionado no es válido.',
+    'auth/unsupported-tenant-operation':
+        'Esta operación no es compatible con la configuración actual.',
+    'auth/tenant-id-mismatch':
+        'El ID del inquilino proporcionado no coincide con la configuración.',
   };
 
   Future<void> _handleRegister() async {
-    if (_nameController.text.isEmpty ||
-        _emailController.text.isEmpty ||
+    // Validación básica de campos vacíos
+    if (_nameController.text.trim().isEmpty ||
+        _emailController.text.trim().isEmpty ||
         _passwordController.text.isEmpty ||
         _confirmPasswordController.text.isEmpty) {
       setState(() {
-        _error = 'Por favor, completa todos los campos';
+        _error = 'Por favor, completa todos los campos obligatorios.';
       });
       return;
     }
 
+    // Validación del nombre
+    if (_nameController.text.trim().length < 2) {
+      setState(() {
+        _error = 'El nombre debe tener al menos 2 caracteres.';
+      });
+      return;
+    }
+
+    // Validación básica del email
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(_emailController.text.trim())) {
+      setState(() {
+        _error = 'Por favor, ingresa un correo electrónico válido.';
+      });
+      return;
+    }
+
+    // Validación de contraseñas
     if (_passwordController.text != _confirmPasswordController.text) {
       setState(() {
-        _error = 'Las contraseñas no coinciden.';
+        _error =
+            'Las contraseñas no coinciden. Por favor, verifica que sean idénticas.';
       });
       return;
     }
 
-    if (_passwordController.text.length < 6) {
+    // Validación robusta de la contraseña
+    if (_passwordController.text.length < 8) {
       setState(() {
-        _error = 'La contraseña debe tener al menos 6 caracteres';
+        _error = 'La contraseña debe tener al menos 8 caracteres.';
+      });
+      return;
+    }
+
+    // Verificar que la contraseña tenga al menos una letra y un número
+    final hasLetter = RegExp(r'[a-zA-Z]').hasMatch(_passwordController.text);
+    final hasNumber = RegExp(r'[0-9]').hasMatch(_passwordController.text);
+
+    if (!hasLetter || !hasNumber) {
+      setState(() {
+        _error = 'La contraseña debe contener al menos una letra y un número.';
       });
       return;
     }
@@ -81,11 +152,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       if (mounted && userCredential.user != null) {
         print('Registro exitoso: ${userCredential.user?.email}');
+        print(
+            '📧 Correo de verificación enviado, redirigiendo a VerifyEmailScreen');
+
         Navigator.pushAndRemoveUntil(
           context,
           PageRouteBuilder(
             pageBuilder: (context, animation, secondaryAnimation) =>
-                const HomeScreen(),
+                const VerifyEmailScreen(),
             transitionDuration: Duration.zero,
             reverseTransitionDuration: Duration.zero,
           ),
@@ -94,14 +168,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
     } on FirebaseAuthException catch (e) {
       print('Error en registro: ${e.code}');
-      setState(() {
-        _error = _firebaseErrorMessages[e.code] ??
-            'Error desconocido al registrarse.';
-      });
+
+      if (e.code == 'email-already-in-use') {
+        // Caso especial para email ya existente - mostrar diálogo
+        await _showEmailAlreadyExistsDialog();
+      } else {
+        setState(() {
+          _error = _firebaseErrorMessages[e.code] ??
+              'Error desconocido al registrarse: ${e.message ?? e.code}';
+        });
+      }
     } catch (e) {
-      print('Error en registro: $e');
+      print('Error general en registro: $e');
       setState(() {
-        _error = 'Error desconocido al registrarse.';
+        _error =
+            'Error inesperado al crear la cuenta. Por favor, intenta de nuevo.';
       });
     } finally {
       if (mounted) {
@@ -110,6 +191,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
         });
       }
     }
+  }
+
+  Future<void> _showEmailAlreadyExistsDialog() async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'Cuenta existente',
+            style: TextStyle(
+              color: Color(0xFF2563EB),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          content: const Text(
+            'Ya existe una cuenta con este correo electrónico. ¿Te gustaría iniciar sesión en su lugar?',
+            style: TextStyle(color: Colors.black87),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text(
+                'Cancelar',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        const LoginScreen(),
+                    transitionDuration: Duration.zero,
+                  ),
+                  (route) => false,
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Iniciar sesión'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -236,12 +373,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _handleRegister,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue.withOpacity(0.2),
-                              padding: const EdgeInsets.symmetric(vertical: 20),
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black87,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                side: const BorderSide(color: Colors.blue),
+                                borderRadius: BorderRadius.circular(12),
+                                side: const BorderSide(color: Colors.black87),
                               ),
+                              elevation: 0,
+                              shadowColor: Colors.transparent,
                             ),
                             child: _isLoading
                                 ? const Row(
@@ -251,17 +391,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                         width: 20,
                                         height: 20,
                                         child: CircularProgressIndicator(
-                                          color: Colors.white,
+                                          color: Colors.black87,
                                           strokeWidth: 2,
                                         ),
                                       ),
-                                      SizedBox(width: 8),
+                                      SizedBox(width: 12),
                                       Text(
                                         'Creando cuenta...',
                                         style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
+                                          color: Colors.black87,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ],
@@ -269,14 +409,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 : const Text(
                                     'Crear cuenta',
                                     style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 20),
                         TextButton(
                           onPressed: () {
                             Navigator.pushAndRemoveUntil(
@@ -290,11 +430,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               (route) => false,
                             );
                           },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
                           child: const Text(
                             '¿Ya tienes cuenta? Inicia sesión',
                             style: TextStyle(
                               color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
                               decoration: TextDecoration.underline,
+                              decorationColor: Colors.white,
                             ),
                           ),
                         ),
