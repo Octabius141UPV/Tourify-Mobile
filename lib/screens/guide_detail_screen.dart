@@ -919,7 +919,10 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       'duration': activity['duration'] ?? 60,
       'day': activity['day'] ?? 1,
       'order': activity['order'],
-      'images': activity['images'] ?? [],
+      'images': activity[
+          'images'], // ⚠️ PRESERVAR IMÁGENES ORIGINALES - NO REEMPLAZAR
+      'imageUrl':
+          activity['imageUrl'], // ⚠️ TAMBIÉN PRESERVAR imageUrl SI EXISTE
       'city': activity['city'],
       'category': activity['category'],
       'likes': activity['likes'] ?? 0,

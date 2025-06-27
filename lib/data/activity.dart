@@ -32,16 +32,16 @@ class Activity {
   factory Activity.fromMap(Map<String, dynamic> data, String id) {
     // Soporte flexible para título
     final String title = (data['title'] ?? data['name'] ?? '').toString();
-    // Soporte flexible para imágenes
+    // PRESERVAR IMÁGENES EXISTENTES - No permitir que se pierdan durante la edición
     List<String> images = [];
-    if (data['images'] != null &&
-        data['images'] is List &&
-        (data['images'] as List).isNotEmpty) {
+    if (data['images'] != null && data['images'] is List) {
+      // CRÍTICO: Preservar incluso arrays vacíos - no intentar regenerar
       images = List<String>.from(data['images']);
     } else if (data['imageUrl'] != null &&
         data['imageUrl'].toString().isNotEmpty) {
       images = [data['imageUrl'].toString()];
     }
+    // NO crear imágenes por defecto aquí - esto causaba el problema de cambio de imágenes
     return Activity(
       id: id,
       title: title,
@@ -84,6 +84,8 @@ class Activity {
       'day': day,
       'order': order,
       'images': images,
+      // INCLUIR imageUrl para compatibilidad si solo hay una imagen
+      'imageUrl': images.isNotEmpty ? images.first : null,
       'city': city,
       'category': category,
       'likes': likes,
