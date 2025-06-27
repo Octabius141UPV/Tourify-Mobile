@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:tourify_flutter/screens/guide_detail_screen.dart';
 import 'package:tourify_flutter/services/collaborators_service.dart';
+import 'package:tourify_flutter/services/auth_service.dart';
 
 class NavigationService {
   static final GlobalKey<NavigatorState> navigatorKey =
@@ -40,6 +41,47 @@ class NavigationService {
     try {
       // Si hay un token de acceso, verificar y procesar
       if (accessToken != null) {
+        // Esperar un momento para asegurar que Firebase Auth esté listo
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        // Verificar autenticación
+        User? user = FirebaseAuth.instance.currentUser;
+
+        // Si no hay usuario, esperar un poco más y reintentar
+        if (user == null) {
+          await Future.delayed(const Duration(seconds: 1));
+          user = FirebaseAuth.instance.currentUser;
+        }
+
+        // Si aún no hay usuario, intentar reautenticar
+        if (user == null) {
+          final hasValidSession = await AuthService.hasValidSession();
+          if (hasValidSession) {
+            try {
+              final credentials = await AuthService.getSavedCredentials();
+              if (credentials['email'] != null &&
+                  credentials['password'] != null) {
+                final userCredential =
+                    await AuthService.signInWithEmailAndPassword(
+                  credentials['email']!,
+                  credentials['password']!,
+                );
+                if (userCredential?.user != null) {
+                  user = userCredential!.user;
+                  print('Usuario reautenticado para acceso a guía');
+                }
+              }
+            } catch (e) {
+              print('Error al reautenticar para acceso a guía: $e');
+            }
+          }
+        }
+
+        if (user == null) {
+          _showErrorDialog('El link de acceso no es válido o ha expirado');
+          return;
+        }
+
         final collaboratorsService = CollaboratorsService();
         final result =
             await collaboratorsService.verifyAccessLink(guideId, accessToken);
@@ -205,8 +247,46 @@ class NavigationService {
     try {
       print('Procesando link de unirse a guía: $guideId con token: $token');
 
+      // Esperar un momento para que Firebase Auth se inicialice completamente
+      await Future.delayed(const Duration(milliseconds: 500));
+
       // Verificar que tenemos un usuario autenticado antes de proceder
-      final user = FirebaseAuth.instance.currentUser;
+      User? user = FirebaseAuth.instance.currentUser;
+
+      // Si no hay usuario, esperar un poco más y reintentar
+      if (user == null) {
+        await Future.delayed(const Duration(seconds: 1));
+        user = FirebaseAuth.instance.currentUser;
+      }
+
+      if (user == null) {
+        // Verificar si hay credenciales recordadas
+        final hasValidSession = await AuthService.hasValidSession();
+        final hasStoredCredentials = await AuthService.hasStoredCredentials();
+
+        if (hasValidSession || hasStoredCredentials) {
+          // Intentar reautenticar con credenciales guardadas
+          try {
+            final credentials = await AuthService.getSavedCredentials();
+            if (credentials['email'] != null &&
+                credentials['password'] != null) {
+              final userCredential =
+                  await AuthService.signInWithEmailAndPassword(
+                credentials['email']!,
+                credentials['password']!,
+              );
+              if (userCredential?.user != null) {
+                user = userCredential!.user;
+                print(
+                    'Usuario reautenticado exitosamente para procesar deep link');
+              }
+            }
+          } catch (e) {
+            print('Error al reautenticar usuario: $e');
+          }
+        }
+      }
+
       if (user == null) {
         _showErrorDialog(
             'Debes iniciar sesión antes de unirte a una guía.\n\nPor favor, inicia sesión e intenta nuevamente.');
@@ -229,8 +309,49 @@ class NavigationService {
       );
 
       final collaboratorsService = CollaboratorsService();
-      final result =
-          await collaboratorsService.verifyAccessLink(guideId, token);
+
+      // Asegurar que el token esté fresco antes de la verificación
+      try {
+        await user.getIdToken(true); // Forzar refresh del token
+        print('Token de autenticación refrescado');
+      } catch (tokenError) {
+        print('Error al refrescar token: $tokenError');
+        // Si hay error al refrescar el token, intentar reautenticar
+        if (tokenError.toString().contains('network-request-failed') ||
+            tokenError.toString().contains('invalid-user-token')) {
+          // Cerrar diálogo de progreso temporal
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+
+          _showErrorDialog(
+              'Tu sesión ha expirado. Por favor, cierra sesión y vuelve a iniciar sesión para continuar.');
+          return;
+        }
+      }
+
+      bool result = false;
+      try {
+        result = await collaboratorsService.verifyAccessLink(guideId, token);
+      } catch (verifyError) {
+        // Si hay error de permisos, intentar refrescar el token una vez más
+        if (verifyError.toString().contains('permission-denied') ||
+            verifyError.toString().contains('Error interno del servidor')) {
+          print(
+              'Error de permisos detectado, intentando refrescar token nuevamente...');
+          try {
+            await user.getIdToken(true);
+            await Future.delayed(const Duration(milliseconds: 500));
+            result =
+                await collaboratorsService.verifyAccessLink(guideId, token);
+          } catch (retryError) {
+            print('Error en segundo intento: $retryError');
+            throw retryError; // Re-lanzar el error para el manejo normal
+          }
+        } else {
+          throw verifyError; // Re-lanzar otros errores
+        }
+      }
 
       // Cerrar diálogo de progreso
       if (Navigator.of(context).canPop()) {
@@ -259,7 +380,22 @@ class NavigationService {
 
       // Análisis más detallado del error
       String errorMessage = 'Error al procesar el link de invitación.';
-      if (e.toString().contains('temporalmente no disponible') ||
+
+      if (e.toString().contains('permission-denied')) {
+        errorMessage = '🚫 Error de permisos\n\n'
+            'No tienes permisos para acceder a esta guía. Esto puede ocurrir si:\n\n'
+            '• Tu sesión ha expirado\n'
+            '• El link ha sido revocado\n'
+            '• No tienes permisos en esta guía\n\n'
+            '💡 Solución: Intenta cerrar sesión y volver a iniciar sesión.';
+      } else if (e.toString().contains('Error interno del servidor')) {
+        errorMessage = '🔄 Error del servidor\n\n'
+            'Hay un problema temporal con el servidor. Esto suele resolverse automáticamente.\n\n'
+            '💡 Solución:\n'
+            '• Espera 1-2 minutos e inténtalo de nuevo\n'
+            '• El link sigue siendo válido\n'
+            '• Si persiste, reinicia la aplicación';
+      } else if (e.toString().contains('temporalmente no disponible') ||
           e.toString().contains('unavailable') ||
           e.toString().contains('service is currently unavailable')) {
         errorMessage = '🔄 Servicio temporalmente no disponible\n\n'
@@ -269,9 +405,6 @@ class NavigationService {
             '• Espera 1-2 minutos e inténtalo de nuevo\n'
             '• El link sigue siendo válido\n'
             '• No es necesario que te envíen un nuevo link';
-      } else if (e.toString().contains('permission-denied')) {
-        errorMessage =
-            '🚫 Sin permisos\n\nNo tienes permisos para acceder a esta guía.';
       } else if (e.toString().contains('not-found')) {
         errorMessage =
             '🔍 Guía no encontrada\n\nLa guía no existe o ha sido eliminada.';
@@ -285,7 +418,8 @@ class NavigationService {
       // Mostrar diálogo con opción de reintentar para errores temporales
       if (e.toString().contains('temporalmente no disponible') ||
           e.toString().contains('unavailable') ||
-          e.toString().contains('service is currently unavailable')) {
+          e.toString().contains('service is currently unavailable') ||
+          e.toString().contains('Error interno del servidor')) {
         _showRetryDialog(errorMessage, guideId, token);
       } else {
         _showErrorDialog(errorMessage);

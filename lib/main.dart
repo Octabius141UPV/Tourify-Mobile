@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
+import 'package:clarity_flutter/clarity_flutter.dart';
 // import 'package:flutter_smartlook/flutter_smartlook.dart';  // Temporalmente comentado
 import 'config/firebase_config.dart';
 import 'config/app_colors.dart';
@@ -34,12 +35,34 @@ void main() async {
       await Firebase.initializeApp(options: firebaseOptions);
       debugPrint('Firebase inicializado correctamente');
     }
+
+    // Configurar Microsoft Clarity
+    final clarityProjectId = dotenv.env['CLARITY_PROJECT_ID'];
+    if (clarityProjectId != null &&
+        clarityProjectId.isNotEmpty &&
+        clarityProjectId != 'tu_clarity_project_id_aqui') {
+      final config = ClarityConfig(
+        projectId: clarityProjectId,
+        logLevel: LogLevel.Info,
+      );
+
+      runApp(ClarityWidget(
+        app: const MyApp(),
+        clarityConfig: config,
+      ));
+      debugPrint(
+          'Microsoft Clarity configurado correctamente con ID: $clarityProjectId');
+    } else {
+      debugPrint(
+          'ID de proyecto de Clarity no configurado, ejecutando sin Clarity');
+      runApp(const MyApp());
+    }
   } catch (e, stackTrace) {
     debugPrint('Error durante la inicialización: $e');
     debugPrint('Stack trace: $stackTrace');
+    // En caso de error, ejecutar la app sin Clarity
+    runApp(const MyApp());
   }
-
-  runApp(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
@@ -52,6 +75,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   StreamSubscription? _linkSubscription;
   late final AppLinks _appLinks;
+  static bool _pendingDeepLink = false;
   // final Smartlook smartlook = Smartlook.instance;
 
   @override
@@ -91,6 +115,9 @@ class _MyAppState extends State<MyApp> {
       print('Deep link recibido: $link');
 
       if (uri.scheme == 'tourify') {
+        // Marcar que hay un deep link pendiente
+        _pendingDeepLink = true;
+
         if (uri.host == 'guide') {
           // Link para ver guía: tourify://guide/{guideId}?token={token}
           final guideId = uri.pathSegments.last;
@@ -108,11 +135,20 @@ class _MyAppState extends State<MyApp> {
             print('Error: guideId o token faltante en el deep link');
           }
         }
+
+        // Después de procesar el deep link, limpiar la bandera
+        Future.delayed(const Duration(seconds: 2), () {
+          _pendingDeepLink = false;
+        });
       }
     } catch (e) {
       print('Error al procesar link: $e');
+      _pendingDeepLink = false;
     }
   }
+
+  // Método para obtener el estado de deep link pendiente
+  static bool get hasPendingDeepLink => _pendingDeepLink;
 
   @override
   void dispose() {
@@ -224,17 +260,35 @@ class _AuthCheckerState extends State<AuthChecker> {
       final user = FirebaseAuth.instance.currentUser;
       final shouldRemember = await AuthService.shouldRememberUser();
 
+      // Si hay un deep link pendiente, dar más tiempo para que se procese
+      if (_MyAppState.hasPendingDeepLink) {
+        print(
+            'Deep link pendiente detectado, esperando antes de verificar auth...');
+        await Future.delayed(const Duration(seconds: 2));
+      }
+
       if (mounted) {
         if (user != null && shouldRemember) {
           // Usuario logueado y quiere recordar sesión
           Navigator.pushReplacementNamed(context, '/home');
-        } else {
-          // No hay usuario o no quiere recordar sesión
-          if (user != null && !shouldRemember) {
+        } else if (user != null && !_MyAppState.hasPendingDeepLink) {
+          // Hay usuario pero no quiere recordar sesión Y no hay deep link pendiente
+          if (!shouldRemember) {
             // Cerrar sesión si no quiere recordar
             await AuthService.signOut();
           }
           Navigator.pushReplacementNamed(context, '/login');
+        } else if (user == null && !_MyAppState.hasPendingDeepLink) {
+          // No hay usuario y no hay deep link pendiente
+          Navigator.pushReplacementNamed(context, '/login');
+        } else {
+          // Hay deep link pendiente, esperar un poco más
+          if (_MyAppState.hasPendingDeepLink) {
+            await Future.delayed(const Duration(seconds: 1));
+            if (mounted) {
+              _checkAuthStatus(); // Reintentar
+            }
+          }
         }
       }
     } catch (e) {
