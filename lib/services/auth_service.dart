@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io' show Platform;
 
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -114,10 +116,80 @@ class AuthService {
     }
   }
 
-  // Sign out (updated to handle Google Sign In)
+  // Sign in with Apple
+  static Future<UserCredential?> signInWithApple() async {
+    try {
+      // Check if Apple Sign In is available
+      if (!Platform.isIOS) {
+        print('Apple Sign In is only available on iOS');
+        return null;
+      }
+
+      // Check if Apple Sign In is available on this device
+      final bool isAvailable = await SignInWithApple.isAvailable();
+      if (!isAvailable) {
+        print('Apple Sign In is not available on this device');
+        return null;
+      }
+
+      // Request credential for the currently signed in Apple ID
+      final AuthorizationCredentialAppleID appleCredential =
+          await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      // Create an `OAuthCredential` from the credential returned by Apple
+      final oauthCredential = OAuthProvider("apple.com").credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      // Sign in the user with Firebase
+      final userCredential = await _auth.signInWithCredential(oauthCredential);
+
+      // Update the user's display name if it's not set and we have it from Apple
+      if (userCredential.user != null &&
+          userCredential.user!.displayName == null) {
+        final String displayName = _buildDisplayNameFromApple(appleCredential);
+        if (displayName.isNotEmpty) {
+          await userCredential.user!.updateDisplayName(displayName);
+        }
+      }
+
+      // Create or update user document
+      if (userCredential.user != null) {
+        await _createUserDocument(userCredential.user!);
+      }
+
+      return userCredential;
+    } catch (e) {
+      print('Error signing in with Apple: $e');
+      return null;
+    }
+  }
+
+  // Helper method to build display name from Apple ID credential
+  static String _buildDisplayNameFromApple(
+      AuthorizationCredentialAppleID credential) {
+    if (credential.givenName != null && credential.familyName != null) {
+      return '${credential.givenName} ${credential.familyName}';
+    } else if (credential.givenName != null) {
+      return credential.givenName!;
+    } else if (credential.familyName != null) {
+      return credential.familyName!;
+    }
+    return '';
+  }
+
+  // Sign out (handles Google Sign In and Apple Sign In)
   static Future<void> signOut() async {
     try {
       await _googleSignIn.signOut();
+      // Note: Apple Sign In doesn't require explicit sign out
+      // as it's handled automatically by Firebase Auth
       await _auth.signOut();
     } catch (e) {
       print('Error signing out: $e');
@@ -298,6 +370,8 @@ class AuthService {
     try {
       await clearRememberedCredentials();
       await _googleSignIn.signOut();
+      // Note: Apple Sign In doesn't require explicit sign out
+      // as it's handled automatically by Firebase Auth
       await _auth.signOut();
     } catch (e) {
       print('Error signing out and clearing remember me: $e');
