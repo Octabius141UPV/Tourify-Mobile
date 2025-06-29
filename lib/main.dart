@@ -258,7 +258,6 @@ class _AuthCheckerState extends State<AuthChecker> {
   Future<void> _checkAuthStatus() async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      final shouldRemember = await AuthService.shouldRememberUser();
 
       // Si hay un deep link pendiente, dar más tiempo para que se procese
       if (_MyAppState.hasPendingDeepLink) {
@@ -268,32 +267,40 @@ class _AuthCheckerState extends State<AuthChecker> {
       }
 
       if (mounted) {
-        if (user != null && shouldRemember) {
-          // Usuario logueado y quiere recordar sesión
-          Navigator.pushReplacementNamed(context, '/home');
-        } else if (user != null && !_MyAppState.hasPendingDeepLink) {
-          // Hay usuario pero no quiere recordar sesión Y no hay deep link pendiente
-          if (!shouldRemember) {
-            // Cerrar sesión si no quiere recordar
-            await AuthService.signOut();
-          }
-          Navigator.pushReplacementNamed(context, '/login');
-        } else if (user == null && !_MyAppState.hasPendingDeepLink) {
-          // No hay usuario y no hay deep link pendiente
-          Navigator.pushReplacementNamed(context, '/login');
-        } else {
-          // Hay deep link pendiente, esperar un poco más
-          if (_MyAppState.hasPendingDeepLink) {
-            await Future.delayed(const Duration(seconds: 1));
-            if (mounted) {
-              _checkAuthStatus(); // Reintentar
+        if (user != null) {
+          // Verificar si es un proveedor OAuth (Google/Apple) o email/password
+          final isOAuthProvider = user.providerData.any((provider) =>
+              provider.providerId == 'google.com' ||
+              provider.providerId == 'apple.com');
+
+          // Para OAuth providers, no necesitamos verificar email (ya está verificado)
+          // Para email/password sí necesitamos verificación
+          final requiresEmailVerification =
+              !isOAuthProvider && !user.emailVerified;
+
+          if (requiresEmailVerification) {
+            // Usuario de email/password sin verificar - enviar a verificación
+            Navigator.pushReplacementNamed(context, '/verify-email');
+          } else {
+            // Usuario autenticado (OAuth o email verificado)
+            final shouldRemember = await AuthService.shouldRememberUser();
+            if (shouldRemember) {
+              Navigator.pushReplacementNamed(context, '/home');
+            } else {
+              // Si no quiere recordar sesión, cerrar sesión
+              await AuthService.signOut();
+              Navigator.pushReplacementNamed(context, '/login');
             }
           }
+        } else {
+          // Sin usuario - ir a login
+          Navigator.pushReplacementNamed(context, '/login');
         }
       }
     } catch (e) {
       print('Error verificando estado de autenticación: $e');
       if (mounted) {
+        // En caso de error, siempre ir a login por seguridad
         Navigator.pushReplacementNamed(context, '/login');
       }
     }

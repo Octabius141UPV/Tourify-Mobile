@@ -54,8 +54,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _isLoadingPopularGuides = false;
       });
     } catch (e) {
-      print('Error loading popular guides: $e');
+      print('Error loading curated guides: $e');
       setState(() {
+        _popularGuides = [];
         _isLoadingPopularGuides = false;
       });
     }

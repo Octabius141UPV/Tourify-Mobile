@@ -377,4 +377,79 @@ class AuthService {
       print('Error signing out and clearing remember me: $e');
     }
   }
+
+  // Delete user account completely
+  static Future<bool> deleteAccount() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('No user is currently signed in');
+      }
+
+      final String userId = user.uid;
+
+      // 1. Eliminar todos los datos del usuario en Firestore
+      await _deleteAllUserData(userId);
+
+      // 2. Eliminar la cuenta de Firebase Auth
+      await user.delete();
+
+      // 3. Limpiar credenciales locales
+      await clearRememberedCredentials();
+
+      // 4. Cerrar sesión de proveedores OAuth
+      await _googleSignIn.signOut();
+
+      return true;
+    } catch (e) {
+      print('Error deleting account: $e');
+      return false;
+    }
+  }
+
+  // Helper method para eliminar todos los datos del usuario
+  static Future<void> _deleteAllUserData(String userId) async {
+    try {
+      final batch = _firestore.batch();
+
+      // Eliminar documento del usuario
+      final userDoc = _firestore.collection('users').doc(userId);
+      batch.delete(userDoc);
+
+      // Eliminar todas las guías del usuario
+      final guidesSnapshot = await _firestore
+          .collection('guides')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      for (final guideDoc in guidesSnapshot.docs) {
+        // Eliminar subcolección de días de cada guía
+        final daysSnapshot = await guideDoc.reference.collection('days').get();
+        for (final dayDoc in daysSnapshot.docs) {
+          batch.delete(dayDoc.reference);
+        }
+
+        // Eliminar la guía
+        batch.delete(guideDoc.reference);
+      }
+
+      // Eliminar interacciones del usuario
+      final interactionsSnapshot = await _firestore
+          .collection('user_interactions')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      for (final interactionDoc in interactionsSnapshot.docs) {
+        batch.delete(interactionDoc.reference);
+      }
+
+      // Ejecutar todas las eliminaciones
+      await batch.commit();
+
+      print('✅ Todos los datos del usuario eliminados correctamente');
+    } catch (e) {
+      print('❌ Error eliminando datos del usuario: $e');
+      throw e;
+    }
+  }
 }

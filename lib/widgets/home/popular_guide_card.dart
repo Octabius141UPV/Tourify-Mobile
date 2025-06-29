@@ -7,6 +7,8 @@ class PopularGuideCard extends StatelessWidget {
   final String? imageUrl;
   final String? city;
   final VoidCallback? onTap;
+  final VoidCallback? onCopyTap;
+  final bool isPredefined;
 
   const PopularGuideCard({
     super.key,
@@ -16,30 +18,33 @@ class PopularGuideCard extends StatelessWidget {
     this.imageUrl,
     this.city,
     this.onTap,
+    this.onCopyTap,
+    this.isPredefined = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              height: 80,
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header con imagen
+          InkWell(
+            onTap: onTap,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: Container(
+              height: 70,
               decoration: BoxDecoration(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(16)),
@@ -51,7 +56,12 @@ class PopularGuideCard extends StatelessWidget {
                 child: _buildHeaderContent(),
               ),
             ),
-            Expanded(
+          ),
+
+          // Contenido del card
+          Expanded(
+            child: InkWell(
+              onTap: onTap,
               child: Padding(
                 padding: const EdgeInsets.all(8),
                 child: Column(
@@ -115,8 +125,41 @@ class PopularGuideCard extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+
+          // Botón "Usar esta guía" si es una guía predefinida
+          if (isPredefined) ...[
+            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            InkWell(
+              onTap: onCopyTap,
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(16)),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.copy,
+                      size: 16,
+                      color: Colors.blue[600],
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Usar esta guía',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
-        ),
+        ],
       ),
     );
   }

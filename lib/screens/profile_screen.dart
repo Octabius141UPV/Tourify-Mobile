@@ -597,15 +597,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: _buildStyledButton(
-                              onPressed: _handleLogout,
-                              icon: Icons.logout,
-                              label: 'Cerrar sesión',
-                              isSecondary: true,
-                              isDangerous: true,
-                            ),
+                          Column(
+                            children: [
+                              const SizedBox(height: 32),
+                              SizedBox(
+                                width: double.infinity,
+                                child: _buildStyledButton(
+                                  onPressed: _handleDeleteAccount,
+                                  icon: Icons.delete_forever,
+                                  label: 'Eliminar cuenta',
+                                  isSecondary: false,
+                                  isDangerous: true,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              SizedBox(
+                                width: double.infinity,
+                                child: _buildStyledButton(
+                                  onPressed: _handleLogout,
+                                  icon: Icons.logout,
+                                  label: 'Cerrar sesión',
+                                  isSecondary: true,
+                                  isDangerous: true,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ],
@@ -851,5 +867,185 @@ class _ProfileScreenState extends State<ProfileScreen> {
         reverseTransitionDuration: Duration.zero,
       ),
     );
+  }
+
+  Future<void> _handleDeleteAccount() async {
+    // Implementa la lógica para eliminar la cuenta del usuario
+    // Esto puede incluir la eliminación de datos del servidor y la autenticación
+    // Aquí puedes mostrar un diálogo de confirmación antes de proceder
+    final bool? shouldDelete = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, // No permitir cerrar tocando fuera
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.delete_forever,
+                color: Colors.red,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Eliminar cuenta permanentemente',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '⚠️ Esta acción es irreversible',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Se eliminarán permanentemente:',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• Tu perfil y datos personales'),
+                  Text('• Todas tus guías de viaje'),
+                  Text('• Historial de actividades'),
+                  Text('• Preferencias y configuración'),
+                  Text('• Colaboraciones con otros usuarios'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'No podrás recuperar estos datos después de la eliminación.',
+              style: TextStyle(
+                fontSize: 14,
+                fontStyle: FontStyle.italic,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Sí, eliminar mi cuenta',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete == true) {
+      try {
+        // Mostrar indicador de carga
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Text('Eliminando cuenta...'),
+              ],
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        await AuthService.deleteAccount();
+
+        // Ocultar el snackbar de carga
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        // Mostrar mensaje de éxito
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Cuenta eliminada correctamente'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Esperar un momento para mostrar el mensaje de éxito
+        await Future.delayed(const Duration(seconds: 2));
+
+        // Navegar a la pantalla de login directamente y limpiar el historial
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        // Ocultar el snackbar de carga
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error al eliminar cuenta: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
