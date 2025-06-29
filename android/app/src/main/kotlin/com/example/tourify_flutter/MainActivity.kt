@@ -1,4 +1,4 @@
-package com.example.tourify_flutter
+package com.mycompany.tourify
 
 import io.flutter.embedding.android.FlutterActivity
 
