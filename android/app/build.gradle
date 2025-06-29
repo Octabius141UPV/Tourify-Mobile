@@ -15,6 +15,15 @@ if (localPropertiesFile.exists()) {
     }
 }
 
+// Cargar variables de entorno desde .env
+def envProperties = new Properties()
+def envFile = rootProject.file('../../.env')
+if (envFile.exists()) {
+    envFile.withReader('UTF-8') { reader ->
+        envProperties.load(reader)
+    }
+}
+
 def flutterRoot = localProperties.getProperty('flutter.sdk')
 if (flutterRoot == null) {
     throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
@@ -56,6 +65,11 @@ android {
         targetSdk 34
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+        
+        // Configurar placeholders para el manifest
+        manifestPlaceholders = [
+            googleMapsApiKey: envProperties.getProperty('GOOGLE_MAPS_API_KEY', '')
+        ]
     }
 
     buildTypes {

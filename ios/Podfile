@@ -4,6 +4,22 @@ platform :ios, '15.0'
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
+# Leer variables del archivo .env
+def load_env_vars
+  env_file = File.join(File.dirname(__FILE__), '..', '.env')
+  if File.exist?(env_file)
+    File.readlines(env_file).each do |line|
+      key, value = line.strip.split('=', 2)
+      if key && value
+        ENV[key] = value.gsub(/^["']|["']$/, '') # Remover comillas si las hay
+      end
+    end
+  end
+end
+
+# Cargar variables de entorno
+load_env_vars
+
 project 'Runner', {
   'Debug' => :debug,
   'Profile' => :release,
@@ -56,6 +72,8 @@ post_install do |installer|
       config.build_settings['ENABLE_BITCODE'] = 'NO'
       config.build_settings['SWIFT_VERSION'] = '5.0'
 
+      # Configurar la API key de Google Maps desde el archivo .env
+      config.build_settings['GOOGLE_MAPS_API_KEY'] = ENV['GOOGLE_MAPS_API_KEY'] || ''
      
     end
   end
