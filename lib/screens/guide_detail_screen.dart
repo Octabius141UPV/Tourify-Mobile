@@ -20,6 +20,7 @@ import '../services/guide_service.dart';
 import '../services/public_guides_service.dart';
 import 'collaborators_screen.dart';
 import 'premium_subscription_screen.dart';
+import 'guide_map_screen.dart';
 import 'dart:io';
 
 class GuideDetailScreen extends StatefulWidget {
@@ -2282,16 +2283,93 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   }
 
   // Funciones fake para Google Maps y Calendar
-  void _exportToGoogleMaps(Map<String, dynamic> activity) {
-    _startTravelAgentChat();
+  void _exportToGoogleMaps(Map<String, dynamic> activity) async {
+    try {
+      final activityObj = Activity.fromMap(activity, activity['id'].toString());
+
+      // Navegar a la pantalla del mapa con esta actividad específica
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => GuideMapScreen(
+            guideTitle: widget.guideTitle,
+            city: _guide?['city'] ?? '',
+            activities: [activityObj], // Solo mostrar esta actividad
+          ),
+        ),
+      );
+    } catch (e) {
+      print('Error al abrir el mapa: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al abrir el mapa: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _addToGoogleCalendar(Map<String, dynamic> activity) {
     _startTravelAgentChat();
   }
 
-  void _exportAllToGoogleMaps() {
-    _startTravelAgentChat();
+  void _exportAllToGoogleMaps() async {
+    try {
+      if (_guide == null || _guide!['days'].isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay actividades para exportar'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Recopilar todas las actividades de todos los días
+      List<Activity> allActivities = [];
+
+      for (final day in _guide!['days']) {
+        if (day['activities'] != null && day['activities'] is List) {
+          for (final activity in day['activities']) {
+            final activityObj =
+                Activity.fromMap(activity, activity['id'].toString());
+            allActivities.add(activityObj);
+          }
+        }
+      }
+
+      if (allActivities.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay actividades para exportar'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Navegar directamente a la pantalla del mapa con todas las actividades
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => GuideMapScreen(
+            guideTitle: widget.guideTitle,
+            city: _guide?['city'] ?? '',
+            activities: allActivities,
+          ),
+        ),
+      );
+    } catch (e) {
+      print('Error al abrir el mapa: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al abrir el mapa: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _exportAllToGoogleCalendar() {
