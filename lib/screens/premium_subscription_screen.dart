@@ -56,7 +56,7 @@ class PremiumSubscriptionScreen extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // Mensaje próximamente
+              // Mensaje de precio y suscripción
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -74,7 +74,7 @@ class PremiumSubscriptionScreen extends StatelessWidget {
                   ],
                 ),
                 child: const Text(
-                  '🚀 PRÓXIMAMENTE',
+                  'Suscríbete por solo 5 €/mes',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -88,7 +88,7 @@ class PremiumSubscriptionScreen extends StatelessWidget {
 
               // Descripción
               Text(
-                'Estamos trabajando en funciones increíbles\npara mejorar tu experiencia de viaje',
+                'Disfruta de todas las funciones premium y lleva tu experiencia de viaje al siguiente nivel.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16,
@@ -124,8 +124,7 @@ class PremiumSubscriptionScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildFeatureItem(
-                        Icons.smart_toy, 'Asistente de viaje con IA'),
+                    _buildFeatureItem(Icons.smart_toy, 'Asistente de viaje'),
                     _buildFeatureItem(Icons.cloud_off, 'Uso sin conexión'),
                     _buildFeatureItem(Icons.map, 'Exportación a Google Maps'),
                     _buildFeatureItem(
@@ -135,6 +134,46 @@ class PremiumSubscriptionScreen extends StatelessWidget {
               ),
 
               const SizedBox(height: 32),
+
+              // Botón de suscripción simulado
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('¡Gracias por suscribirte!'),
+                        content: const Text(
+                            'Ahora tienes acceso a todas las funciones premium.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cerrar'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.workspace_premium),
+                  label: const Text(
+                    'Suscribirse por 5 €/mes',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFFFA000),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
 
               // Botón para cerrar
               SizedBox(

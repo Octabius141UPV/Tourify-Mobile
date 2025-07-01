@@ -40,7 +40,7 @@ class CustomBottomNavigationBar extends StatelessWidget {
           selectedItemColor: const Color(0xFF2563EB),
           unselectedItemColor: Colors.grey,
           elevation: 0,
-          items: const [
+          items: [
             BottomNavigationBarItem(
               icon: Icon(Icons.home_rounded),
               label: 'Inicio',
