@@ -3,6 +3,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
 import '../data/activity.dart';
 import '../config/app_colors.dart';
+import '../services/map/geocoding_service.dart';
+import 'dart:ui' as ui;
+import 'package:flutter/services.dart';
+import '../services/map/places_service.dart';
 
 /// Pantalla de mapa específica para mostrar las actividades de una guía
 class GuideMapScreen extends StatefulWidget {
@@ -22,6 +26,8 @@ class GuideMapScreen extends StatefulWidget {
 }
 
 class _GuideMapScreenState extends State<GuideMapScreen> {
+  // =================== VARIABLES Y CONTROLADORES ===================
+  // (Variables de estado, controladores, listas, etc.)
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
   bool _isLoading = true;
@@ -30,15 +36,30 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
   LatLng? _centerLocation;
   int _selectedActivityIndex = -1;
   double _loadingProgress = 0.0;
-  MapType _currentMapType = MapType.normal;
+  final MapType _currentMapType = MapType.normal;
+  List<PlaceInfo?> _placesInfo = [];
+  // Estilo gris para las carreteras (string JSON embebido)
+  final String _greyRoadsMapStyle = '''
+  [
+    {"featureType": "road","elementType": "geometry","stylers": [{"color": "#b0b0b0"}]},
+    {"featureType": "road.arterial","elementType": "geometry","stylers": [{"color": "#cccccc"}]},
+    {"featureType": "road.highway","elementType": "geometry","stylers": [{"color": "#a0a0a0"}]},
+    {"featureType": "road.local","elementType": "geometry","stylers": [{"color": "#e0e0e0"}]},
+    {"featureType": "road","elementType": "labels.text.fill","stylers": [{"color": "#888888"}]},
+    {"featureType": "road","elementType": "labels.text.stroke","stylers": [{"color": "#ffffff"},{"weight": 2}]}
+  ]
+  ''';
 
+  // =================== MÉTODOS DE LÓGICA DE DATOS ===================
+  // (Carga de datos, geocodificación, places, creación de marcadores, etc.)
   @override
   void initState() {
     super.initState();
     _initializeMapWithTimeout();
+    _loadMarkers();
+    _loadPlacesInfo();
   }
 
-  /// Inicializa el mapa con un timeout para evitar carga infinita
   Future<void> _initializeMapWithTimeout() async {
     try {
       print('⏱️ Iniciando carga con timeout de 10 segundos');
@@ -88,7 +109,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
 
       // Paso 1: Obtener ubicación de la ciudad (sin delay)
       print('📍 Obteniendo ubicación de la ciudad: ${widget.city}');
-      _getCityLocation(); // Hacer síncrono
+      await _getCityLocation();
       print('📍 Ubicación encontrada: $_centerLocation');
 
       if (mounted) {
@@ -100,7 +121,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
       // Paso 2: Crear marcadores (simplificado)
       print(
           '📌 Creando marcadores para ${widget.activities.length} actividades...');
-      _createMarkersFromActivities(); // Hacer síncrono
+      await _createMarkersFromActivities(); // Hacer síncrono
       print('📌 Marcadores creados: ${_markers.length}');
 
       if (mounted) {
@@ -137,85 +158,105 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     }
   }
 
-  /// Obtiene las coordenadas aproximadas de la ciudad
-  void _getCityLocation() {
+  /// Obtiene las coordenadas reales de la ciudad usando GeocodingService
+  Future<void> _getCityLocation() async {
     try {
-      // Coordenadas por defecto para ciudades principales
-      final cityCoordinates = {
-        'madrid': const LatLng(40.4168, -3.7038),
-        'barcelona': const LatLng(41.3851, 2.1734),
-        'sevilla': const LatLng(37.3891, -5.9845),
-        'valencia': const LatLng(39.4699, -0.3763),
-        'bilbao': const LatLng(43.2627, -2.9253),
-        'paris': const LatLng(48.8566, 2.3522),
-        'londres': const LatLng(51.5074, -0.1278),
-        'london': const LatLng(51.5074, -0.1278),
-        'roma': const LatLng(41.9028, 12.4964),
-        'rome': const LatLng(41.9028, 12.4964),
-        'milan': const LatLng(45.4642, 9.1900),
-        'milán': const LatLng(45.4642, 9.1900),
-        'amsterdam': const LatLng(52.3676, 4.9041),
-        'berlin': const LatLng(52.5200, 13.4050),
-        'berlín': const LatLng(52.5200, 13.4050),
-        'viena': const LatLng(48.2082, 16.3738),
-        'vienna': const LatLng(48.2082, 16.3738),
-        'praga': const LatLng(50.0755, 14.4378),
-        'prague': const LatLng(50.0755, 14.4378),
-        'lisboa': const LatLng(38.7223, -9.1393),
-        'lisbon': const LatLng(38.7223, -9.1393),
-        'oporto': const LatLng(41.1579, -8.6291),
-        'porto': const LatLng(41.1579, -8.6291),
-        'altea': const LatLng(38.5991, 0.0404), // Añadido Altea
-      };
-
-      final cityKey = widget.city.toLowerCase().trim();
-      _centerLocation = cityCoordinates[cityKey] ??
-          const LatLng(40.4168, -3.7038); // Madrid por defecto
-
-      print('🎯 Ciudad: $cityKey -> $_centerLocation');
+      final LatLng? cityLatLng = await GeocodingService.getLatLngFromAddress(widget.city);
+      if (cityLatLng != null) {
+        _centerLocation = cityLatLng;
+        print('🎯 Ciudad: ${widget.city} -> $_centerLocation');
+      } else {
+        print('No se pudo geocodificar la ciudad: ${widget.city}');
+        _centerLocation = const LatLng(40.4168, -3.7038); // fallback Madrid
+      }
     } catch (e) {
       print('Error obteniendo ubicación de la ciudad: $e');
-      _centerLocation = const LatLng(40.4168, -3.7038); // Madrid por defecto
+      _centerLocation = const LatLng(40.4168, -3.7038); // fallback Madrid
     }
   }
 
-  /// Crea marcadores para todas las actividades
-  void _createMarkersFromActivities() {
-    final Set<Marker> markers = {};
+  /// Genera un BitmapDescriptor personalizado con color azul y número
+  Future<BitmapDescriptor> _createNumberedMarker(int number) async {
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(recorder);
+    const double size = 90.0;
+    final Paint paint = Paint()..color = Color(0xFF0062FF);
+    // Dibuja círculo azul
+    canvas.drawCircle(const Offset(size/2, size/2), size/2, paint);
+    // Dibuja el número
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: number.toString(),
+        style: const TextStyle(
+          fontSize: 40,
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset((size - textPainter.width) / 2, (size - textPainter.height) / 2),
+    );
+    final img = await recorder.endRecording().toImage(size.toInt(), size.toInt());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
+  }
 
+  /// Función para limpiar el nombre de la actividad antes de buscar en Geocoding
+  String limpiarNombreActividad(String nombre) {
+    final palabrasProhibidas = [
+      'tour', 'paseo', 'nocturno', 'ruta', 'visita', 'recorrido', 'guía', 'guiado',
+      'experiencia', 'descubrimiento', 'exploración', 'actividad', 'evento',
+      'cultural', 'histórico', 'gastronómico', 'deportivo', 'familiar', 'divertido',
+      'panorámico', 'temático', 'por', 'en', 'de', 'del', 'la', 'el', 'los', 'las'
+    ];
+    var limpio = nombre;
+    for (final palabra in palabrasProhibidas) {
+      limpio = limpio.replaceAll(RegExp('\\b$palabra\\b', caseSensitive: false), '');
+    }
+    // Eliminar espacios dobles y recortar
+    limpio = limpio.replaceAll(RegExp(' +'), ' ').trim();
+    return limpio;
+  }
+
+  /// Crea marcadores para todas las actividades usando geocoding real y marcador personalizado
+  Future<void> _createMarkersFromActivities() async {
+    final Set<Marker> markers = {};
     for (int i = 0; i < widget.activities.length; i++) {
       final activity = widget.activities[i];
-
-      // Generar posiciones aproximadas alrededor del centro de la ciudad
-      final randomOffset = _generateRandomOffset(i);
-      final activityLocation = LatLng(
-        _centerLocation!.latitude + randomOffset.latitude,
-        _centerLocation!.longitude + randomOffset.longitude,
-      );
-
-      markers.add(
-        Marker(
-          markerId: MarkerId('activity_$i'),
-          position: activityLocation,
-          infoWindow: InfoWindow(
-            title: activity.title,
-            snippet: activity.description.length > 50
-                ? '${activity.description.substring(0, 50)}...'
-                : activity.description,
+      final nombreLimpio = limpiarNombreActividad(activity.title);
+      final address = '$nombreLimpio, ${widget.city}';
+      final LatLng? activityLocation = await GeocodingService.getLatLngFromAddress(address);
+      if (activityLocation != null) {
+        final BitmapDescriptor customIcon = await _createNumberedMarker(i + 1);
+        markers.add(
+          Marker(
+            markerId: MarkerId('${widget.guideTitle} - ${activity.title}'),
+            position: activityLocation,
+            infoWindow: InfoWindow(
+              title: '${widget.guideTitle} - ${activity.title}',
+              snippet: activity.description.length > 50
+                  ? '${activity.description.substring(0, 50)}...'
+                  : activity.description,
+            ),
+            icon: customIcon,
+            onTap: () {
+              setState(() {
+                _selectedActivityIndex = i;
+              });
+            },
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              _getMarkerColor(activity.category ?? '')),
-          onTap: () {
-            setState(() {
-              _selectedActivityIndex = i;
-            });
-          },
-        ),
-      );
+        );
+      } else {
+        print('No se pudo geocodificar: $address');
+      }
     }
-
-    _markers = markers;
-    print('🏷️ Marcadores finales: ${_markers.length}');
+    setState(() {
+      _markers = markers;
+    });
   }
 
   /// Genera un offset aleatorio pero consistente para cada actividad
@@ -230,38 +271,10 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     return LatLng(latOffset, lngOffset);
   }
 
-  /// Obtiene el color del marcador según la categoría
-  double _getMarkerColor(String category) {
-    switch (category.toLowerCase()) {
-      case 'cultural':
-      case 'museum':
-      case 'monument':
-        return BitmapDescriptor.hueViolet;
-      case 'food':
-      case 'restaurant':
-      case 'comida':
-        return BitmapDescriptor.hueOrange;
-      case 'nightlife':
-      case 'fiesta':
-      case 'bar':
-        return BitmapDescriptor.hueMagenta;
-      case 'tour':
-      case 'sightseeing':
-        return BitmapDescriptor.hueGreen;
-      case 'shopping':
-        return BitmapDescriptor.hueRose;
-      case 'outdoor':
-      case 'nature':
-        return BitmapDescriptor.hueYellow;
-      default:
-        return BitmapDescriptor.hueBlue;
-    }
-  }
-
   void _onMapCreated(GoogleMapController controller) {
     print('🗺️ Google Map creado exitosamente');
     _mapController = controller;
-
+    _mapController!.setMapStyle(_greyRoadsMapStyle);
     // Verificar que el mapa esté completamente cargado
     Future.delayed(const Duration(milliseconds: 500), () {
       if (_centerLocation != null && _mapController != null) {
@@ -285,63 +298,212 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     }
   }
 
+  // =================== MÉTODOS DE UI ===================
+  // (Métodos build, widgets auxiliares, loading, error, etc.)
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Mapa: ${widget.guideTitle}',
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          // Header fijo con degradado azul y botones
+          _buildHeader(context),
+          // Mapa con bordes redondeados arriba
+          Container(
+            margin: const EdgeInsets.only(top: 90), // Deja espacio para el header
+            height: MediaQuery.of(context).size.height,
+            decoration: const BoxDecoration(
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(0),
+                topRight: Radius.circular(0),
+                bottomLeft: Radius.circular(32),
+                bottomRight: Radius.circular(32),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 10,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: _buildMapScreen(),
           ),
-        ),
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.layers),
-            onPressed: _changeMapType,
-            tooltip: 'Cambiar tipo de mapa',
-          ),
-          IconButton(
-            icon: const Icon(Icons.my_location),
-            onPressed: _centerOnCity,
-            tooltip: 'Centrar en ${widget.city}',
+          // Sheet deslizable para actividades (incluye el handle y la lista)
+          DraggableScrollableSheet(
+            initialChildSize: 0.5,
+            minChildSize: 0.10,
+            maxChildSize: 0.7,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 10,
+                      offset: Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Indicador azul (handle)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (details) {},
+                      child: Container(
+                        width: 40,
+                        height: 6,
+                        margin: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Color(0xFF0062FF),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: widget.activities.length,
+                        itemBuilder: (context, index) {
+                          final activity = widget.activities[index];
+                          final isSelected = index == _selectedActivityIndex;
+                          final placeInfo = (index < _placesInfo.length) ? _placesInfo[index] : null;
+                          return GestureDetector(
+                            onTap: () => _centerOnActivity(index),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFFE8F0FE) : Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black12,
+                                    blurRadius: 8,
+                                    offset: Offset(0, 2),
+                                  ),
+                                ],
+                                border: isSelected
+                                    ? Border.all(color: Color(0xFF0062FF), width: 2)
+                                    : null,
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  activity.title,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 18,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              // Marcador azul con número
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: Color(0xFF0062FF),
+                                                  borderRadius: BorderRadius.circular(12),
+                                                ),
+                                                child: Text(
+                                                  '${index + 1}',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          // Rating y dirección
+                                          if (placeInfo != null && placeInfo.rating != null)
+                                            Row(
+                                              children: [
+                                                Icon(Icons.star, color: Colors.amber, size: 18),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  placeInfo.rating!.toStringAsFixed(1),
+                                                  style: const TextStyle(fontWeight: FontWeight.w500),
+                                                ),
+                                                if (placeInfo.address != null) ...[
+                                                  const SizedBox(width: 12),
+                                                  Flexible(
+                                                    child: Text(
+                                                      placeInfo.address!,
+                                                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                ]
+                                              ],
+                                            ),
+                                          // Review corta
+                                          if (placeInfo != null && placeInfo.review != null)
+                                            Padding(
+                                              padding: const EdgeInsets.only(top: 4.0),
+                                              child: Text(
+                                                '"${placeInfo.review!.length > 80 ? placeInfo.review!.substring(0, 80) + '...' : placeInfo.review!}"',
+                                                style: const TextStyle(fontSize: 13, color: Colors.black87, fontStyle: FontStyle.italic),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          // Descripción de la guía
+                                          if (activity.description.isNotEmpty)
+                                            Padding(
+                                              padding: const EdgeInsets.only(top: 4.0),
+                                              child: Text(
+                                                activity.description.length > 80 ? activity.description.substring(0, 80) + '...' : activity.description,
+                                                style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          Text(
+                                            '${activity.duration}min',
+                                            style: const TextStyle(
+                                              color: Colors.grey,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),
-      body: _buildBody(),
     );
-  }
-
-  /// Convierte el color del marcador a un Color widget
-  Color _getMarkerColorWidget(String category) {
-    switch (category.toLowerCase()) {
-      case 'cultural':
-      case 'museum':
-      case 'monument':
-        return Colors.purple;
-      case 'food':
-      case 'restaurant':
-      case 'comida':
-        return Colors.orange;
-      case 'nightlife':
-      case 'fiesta':
-      case 'bar':
-        return Colors.pink;
-      case 'tour':
-      case 'sightseeing':
-        return Colors.green;
-      case 'shopping':
-        return Colors.red;
-      case 'outdoor':
-      case 'nature':
-        return Colors.yellow[700]!;
-      default:
-        return Colors.blue;
-    }
   }
 
   void _centerOnCity() {
@@ -353,53 +515,6 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
         _selectedActivityIndex = -1;
       });
     }
-  }
-
-  void _changeMapType() {
-    setState(() {
-      switch (_currentMapType) {
-        case MapType.normal:
-          _currentMapType = MapType.satellite;
-          break;
-        case MapType.satellite:
-          _currentMapType = MapType.hybrid;
-          break;
-        case MapType.hybrid:
-          _currentMapType = MapType.terrain;
-          break;
-        case MapType.terrain:
-        default:
-          _currentMapType = MapType.normal;
-          break;
-      }
-    });
-
-    // Mostrar el tipo de mapa actual
-    String mapTypeName;
-    switch (_currentMapType) {
-      case MapType.normal:
-        mapTypeName = 'Normal';
-        break;
-      case MapType.satellite:
-        mapTypeName = 'Satélite';
-        break;
-      case MapType.hybrid:
-        mapTypeName = 'Híbrido';
-        break;
-      case MapType.terrain:
-        mapTypeName = 'Terreno';
-        break;
-      default:
-        mapTypeName = 'Normal';
-        break;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Mapa: $mapTypeName'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
   }
 
   Widget _buildBody() {
@@ -451,7 +566,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
                       width: 12,
                       height: 12,
                       decoration: BoxDecoration(
-                        color: _getMarkerColorWidget(activity.category ?? ''),
+                        color: Colors.blue,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -684,213 +799,10 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
           zoomControlsEnabled: true,
           compassEnabled: true,
           mapType: _currentMapType,
-          onCameraMove: (CameraPosition position) {
-            print('📷 Cámara movida a: ${position.target}');
-          },
           onMapCreated: (GoogleMapController controller) {
             print('🗺️ Google Map widget creado exitosamente');
             _onMapCreated(controller);
           },
-        ),
-
-        // Panel de información en la parte superior
-        Positioned(
-          top: 16,
-          left: 16,
-          right: 16,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.location_on,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.city,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                          ),
-                          Text(
-                            '${widget.activities.length} actividades en el mapa',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // Lista de actividades en la parte inferior
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            height: 140,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(20),
-                topRight: Radius.circular(20),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 10,
-                  offset: Offset(0, -2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                // Indicador de arrastre
-                Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(top: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                // Lista horizontal de actividades
-                Expanded(
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    itemCount: widget.activities.length,
-                    itemBuilder: (context, index) {
-                      final activity = widget.activities[index];
-                      final isSelected = index == _selectedActivityIndex;
-
-                      return GestureDetector(
-                        onTap: () => _centerOnActivity(index),
-                        child: Container(
-                          width: 200,
-                          margin: const EdgeInsets.only(right: 12),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppColors.primary.withOpacity(0.1)
-                                : Colors.grey[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : Colors.grey[300]!,
-                              width: isSelected ? 2 : 1,
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      color: _getMarkerColorWidget(
-                                          activity.category ?? ''),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      activity.title,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                        color: isSelected
-                                            ? AppColors.primary
-                                            : Colors.black87,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                activity.description.length > 60
-                                    ? '${activity.description.substring(0, 60)}...'
-                                    : activity.description,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const Spacer(),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.access_time,
-                                    size: 14,
-                                    color: Colors.grey[500],
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${activity.duration} min',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[500],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
         ),
       ],
     );
@@ -973,6 +885,89 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _loadMarkers() async {
+    setState(() {
+      _isLoading = true;
+    });
+    await _createMarkersFromActivities();
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadPlacesInfo() async {
+    final List<PlaceInfo?> infos = [];
+    for (final activity in widget.activities) {
+      final info = await PlacesService.getPlaceInfo(activity.title, widget.city);
+      infos.add(info);
+    }
+    setState(() {
+      _placesInfo = infos;
+    });
+  }
+
+  // Header fijo con degradado azul y botones
+  Widget _buildHeader(BuildContext context) {
+    final double topPadding = MediaQuery.of(context).padding.top;
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 90,
+        padding: EdgeInsets.only(top: topPadding, left: 0, right: 0),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0062FF), Color(0xFF338CFF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.only(
+            bottomLeft: Radius.circular(24),
+            bottomRight: Radius.circular(24),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+              onPressed: () => Navigator.of(context).pop(),
+              tooltip: 'Volver',
+            ),
+            Expanded(
+              child: Center(
+                child: Text(
+                  widget.guideTitle.isNotEmpty ? widget.guideTitle : widget.city,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 22,
+                    letterSpacing: 0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.my_location, color: Colors.white, size: 26),
+              onPressed: _centerOnCity,
+              tooltip: 'Centrar mapa',
+            ),
+          ],
+        ),
       ),
     );
   }

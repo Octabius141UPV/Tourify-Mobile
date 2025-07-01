@@ -13,7 +13,7 @@ class TourifyMapWidget extends StatefulWidget {
   final Function(GoogleMapController)? onMapCreated;
   final bool showUserLocation;
   final bool showCompass;
-  final bool showMapTypeButton;
+  final bool showMapTypeButton = false;
 
   const TourifyMapWidget({
     super.key,
@@ -24,7 +24,6 @@ class TourifyMapWidget extends StatefulWidget {
     this.onMapCreated,
     this.showUserLocation = true,
     this.showCompass = true,
-    this.showMapTypeButton = false,
   });
 
   @override
@@ -38,7 +37,7 @@ class _TourifyMapWidgetState extends State<TourifyMapWidget> {
   bool _isLoading = true;
   bool _hasLocationPermission = false;
   String? _errorMessage;
-  MapType _currentMapType = MapType.normal;
+  final MapType _currentMapType = MapType.normal;
 
   @override
   void initState() {
@@ -166,14 +165,6 @@ class _TourifyMapWidgetState extends State<TourifyMapWidget> {
             right: 20,
             child: _buildLocationButton(),
           ),
-
-        // Botón de tipo de mapa (opcional)
-        if (widget.showMapTypeButton)
-          Positioned(
-            top: 20,
-            right: 20,
-            child: _buildMapTypeButton(),
-          ),
       ],
     );
   }
@@ -251,25 +242,6 @@ class _TourifyMapWidgetState extends State<TourifyMapWidget> {
       elevation: 4,
       mini: true,
       child: const Icon(Icons.my_location),
-    );
-  }
-
-  Widget _buildMapTypeButton() {
-    return FloatingActionButton(
-      onPressed: () {
-        setState(() {
-          _currentMapType = _currentMapType == MapType.normal
-              ? MapType.satellite
-              : MapType.normal;
-        });
-      },
-      backgroundColor: Colors.white,
-      foregroundColor: AppColors.primary,
-      elevation: 4,
-      mini: true,
-      child: Icon(
-        _currentMapType == MapType.normal ? Icons.satellite : Icons.map,
-      ),
     );
   }
 
