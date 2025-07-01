@@ -18,6 +18,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
   String? _error;
+  bool _isPasswordObscured = true;
+  bool _isConfirmPasswordObscured = true;
 
   final Map<String, String> _firebaseErrorMessages = {
     'auth/email-already-in-use':
@@ -341,8 +343,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _isPasswordObscured
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                color: Colors.grey,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isPasswordObscured = !_isPasswordObscured;
+                                });
+                              },
+                            ),
                           ),
-                          obscureText: true,
+                          obscureText: _isPasswordObscured,
                           textInputAction: TextInputAction.next,
                         ),
                         const SizedBox(height: 16),
@@ -356,8 +371,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _isConfirmPasswordObscured
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                color: Colors.grey,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isConfirmPasswordObscured =
+                                      !_isConfirmPasswordObscured;
+                                });
+                              },
+                            ),
                           ),
-                          obscureText: true,
+                          obscureText: _isConfirmPasswordObscured,
                           textInputAction: TextInputAction.done,
                         ),
                         if (_error != null) ...[
