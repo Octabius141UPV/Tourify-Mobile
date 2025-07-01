@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/collaborators_modal.dart';
 import '../widgets/edit_activity_dialog.dart';
 import '../widgets/add_activity_dialog.dart';
-import '../widgets/civitatis_logo.dart';
+
 import '../widgets/organize_activities_modal.dart';
 import '../utils/activity_utils.dart';
 import 'dart:convert';

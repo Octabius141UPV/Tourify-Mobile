@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tourify_flutter/data/activity.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class EditActivityDialog extends StatefulWidget {
   final Activity activity;
@@ -33,6 +34,33 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
   }
 
   void _handleSave() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Inicia sesión o regístrate'),
+          content: Text(
+              'Debes iniciar sesión o registrarte para guardar cambios en la actividad.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pushNamed('/login');
+              },
+              child: Text('Iniciar sesión'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     final duration = int.tryParse(_durationController.text);
     if (duration == null || duration <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -41,11 +69,9 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
       );
       return;
     }
-
     setState(() {
       _isLoading = true;
     });
-
     try {
       final updatedActivity = Activity(
         id: widget.activity.id,
@@ -63,7 +89,6 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
         endTime: widget.activity.endTime,
         price: widget.activity.price,
       );
-
       await widget.onSave(updatedActivity);
       if (mounted) {
         Navigator.of(context).pop();

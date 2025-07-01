@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:animations/animations.dart';
 import 'create_guide_modal.dart';
 import 'dart:ui';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../config/app_colors.dart';
 
@@ -32,7 +33,37 @@ class CreateGuideButton extends StatelessWidget {
       closedBuilder: (context, action) => Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: action,
+          onTap: () {
+            final user = FirebaseAuth.instance.currentUser;
+            if (user == null) {
+              // Buscar el contexto más cercano para mostrar el diálogo
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text('Inicia sesión o regístrate'),
+                  content: Text(
+                      'Debes iniciar sesión o registrarte para acceder a esta función.'),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      child: Text('Cancelar'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).pushNamed('/login');
+                      },
+                      child: Text('Iniciar sesión'),
+                    ),
+                  ],
+                ),
+              );
+            } else {
+              action();
+            }
+          },
           borderRadius: BorderRadius.circular(32),
           child: Container(
             width: double.infinity,

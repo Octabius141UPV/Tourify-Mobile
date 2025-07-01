@@ -193,7 +193,7 @@ class _MyAppState extends State<MyApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('es', 'ES')],
-      home: const AuthChecker(),
+      home: const HomeScreen(),
       onGenerateRoute: (settings) {
         // Configurar rutas con transiciones personalizadas
         Widget page;
@@ -226,7 +226,7 @@ class _MyAppState extends State<MyApp> {
             page = GuideDetailScreen(guideId: guideId, guideTitle: guideTitle);
             break;
           default:
-            page = const AuthChecker();
+            page = const HomeScreen();
         }
 
         return PageRouteBuilder(
@@ -236,82 +236,6 @@ class _MyAppState extends State<MyApp> {
           reverseTransitionDuration: Duration.zero,
         );
       },
-    );
-  }
-}
-
-// Widget para verificar autenticación
-class AuthChecker extends StatefulWidget {
-  const AuthChecker({super.key});
-
-  @override
-  State<AuthChecker> createState() => _AuthCheckerState();
-}
-
-class _AuthCheckerState extends State<AuthChecker> {
-  @override
-  void initState() {
-    super.initState();
-    _checkAuthStatus();
-  }
-
-  Future<void> _checkAuthStatus() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-
-      // Si hay un deep link pendiente, dar más tiempo para que se procese
-      if (_MyAppState.hasPendingDeepLink) {
-        print(
-            'Deep link pendiente detectado, esperando antes de verificar auth...');
-        await Future.delayed(const Duration(seconds: 2));
-      }
-
-      if (mounted) {
-        if (user != null) {
-          // Verificar si es un proveedor OAuth (Google/Apple) o email/password
-          final isOAuthProvider = user.providerData.any((provider) =>
-              provider.providerId == 'google.com' ||
-              provider.providerId == 'apple.com');
-
-          // Para OAuth providers, no necesitamos verificar email (ya está verificado)
-          // Para email/password sí necesitamos verificación
-          final requiresEmailVerification =
-              !isOAuthProvider && !user.emailVerified;
-
-          if (requiresEmailVerification) {
-            // Usuario de email/password sin verificar - enviar a verificación
-            Navigator.pushReplacementNamed(context, '/verify-email');
-          } else {
-            // Usuario autenticado (OAuth o email verificado)
-            final shouldRemember = await AuthService.shouldRememberUser();
-            if (shouldRemember) {
-              Navigator.pushReplacementNamed(context, '/home');
-            } else {
-              // Si no quiere recordar sesión, cerrar sesión
-              await AuthService.signOut();
-              Navigator.pushReplacementNamed(context, '/login');
-            }
-          }
-        } else {
-          // Sin usuario - ir a login
-          Navigator.pushReplacementNamed(context, '/login');
-        }
-      }
-    } catch (e) {
-      print('Error verificando estado de autenticación: $e');
-      if (mounted) {
-        // En caso de error, siempre ir a login por seguridad
-        Navigator.pushReplacementNamed(context, '/login');
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Widget transparente para que se vea el native splash
-    return const Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SizedBox.shrink(),
     );
   }
 }

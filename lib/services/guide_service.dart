@@ -506,88 +506,78 @@ class GuideService {
   // Get top public guides - Guías curadas por el equipo
   static Future<List<Map<String, dynamic>>> getTopPublicGuides(
       {int limit = 10}) async {
-    try {
-      // Las guías curadas son accesibles para usuarios autenticados
-      // Se pueden copiar a la cuenta personal del usuario
-      if (!AuthService.isAuthenticated) {
-        throw Exception('Authentication required to access curated guides');
-      }
-
-      // Guías curadas por el equipo Tourify (contenido experto)
-      return [
-        {
-          'id': 'predefined_berlin',
-          'title': 'Berlín en 3 días',
-          'author': 'Equipo Tourify',
-          'city': 'Berlín',
-          'destination': 'Berlín',
-          'description':
-              'Descubre la vibrante capital alemana con historia, cultura y vida nocturna',
-          'imageUrl': ImageService.getCityImage('berlin'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'isPredefined': true, // Marcar como guía predefinida
-          'duration': '3 días',
-          'activities': 9,
-          'totalDays': 3,
-          'views': 0,
-        },
-        {
-          'id': 'predefined_budapest',
-          'title': 'Budapest, la perla del Danubio',
-          'author': 'Equipo Tourify',
-          'city': 'Budapest',
-          'destination': 'Budapest',
-          'description':
-              'Explora los baños termales, el Parlamento y los barrios históricos',
-          'imageUrl': ImageService.getCityImage('budapest'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'isPredefined': true,
-          'duration': '4 días',
-          'activities': 11,
-          'totalDays': 4,
-          'views': 0,
-        },
-        {
-          'id': 'predefined_rome',
-          'title': 'Roma eterna',
-          'author': 'Equipo Tourify',
-          'city': 'Roma',
-          'destination': 'Roma',
-          'description':
-              'Sumérgete en la historia antigua del Coliseo, Vaticano y Fontana de Trevi',
-          'imageUrl': ImageService.getCityImage('roma'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'isPredefined': true,
-          'duration': '5 días',
-          'activities': 15,
-          'totalDays': 5,
-          'views': 0,
-        },
-        {
-          'id': 'predefined_milan',
-          'title': 'Milán, moda y cultura',
-          'author': 'Equipo Tourify',
-          'city': 'Milán',
-          'destination': 'Milán',
-          'description':
-              'Desde el Duomo hasta la Scala, la elegancia italiana te espera',
-          'imageUrl': ImageService.getCityImage('milan'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'isPredefined': true,
-          'duration': '3 días',
-          'activities': 8,
-          'totalDays': 3,
-          'views': 0,
-        },
-      ].take(limit).toList();
-    } catch (e) {
-      print('Error fetching curated guides: $e');
-      return [];
-    }
+    // Permitir acceso a invitados: no comprobar autenticación
+    // Guías curadas por el equipo Tourify (contenido experto)
+    return [
+      {
+        'id': 'predefined_berlin',
+        'title': 'Berlín en 3 días',
+        'author': 'Equipo Tourify',
+        'city': 'Berlín',
+        'destination': 'Berlín',
+        'description':
+            'Descubre la vibrante capital alemana con historia, cultura y vida nocturna',
+        'imageUrl': ImageService.getCityImage('berlin'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true, // Marcar como guía predefinida
+        'duration': '3 días',
+        'activities': 9,
+        'totalDays': 3,
+        'views': 0,
+      },
+      {
+        'id': 'predefined_budapest',
+        'title': 'Budapest, la perla del Danubio',
+        'author': 'Equipo Tourify',
+        'city': 'Budapest',
+        'destination': 'Budapest',
+        'description':
+            'Explora los baños termales, el Parlamento y los barrios históricos',
+        'imageUrl': ImageService.getCityImage('budapest'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true,
+        'duration': '4 días',
+        'activities': 11,
+        'totalDays': 4,
+        'views': 0,
+      },
+      {
+        'id': 'predefined_rome',
+        'title': 'Roma eterna',
+        'author': 'Equipo Tourify',
+        'city': 'Roma',
+        'destination': 'Roma',
+        'description':
+            'Sumérgete en la historia antigua del Coliseo, Vaticano y Fontana de Trevi',
+        'imageUrl': ImageService.getCityImage('roma'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true,
+        'duration': '5 días',
+        'activities': 15,
+        'totalDays': 5,
+        'views': 0,
+      },
+      {
+        'id': 'predefined_milan',
+        'title': 'Milán, moda y cultura',
+        'author': 'Equipo Tourify',
+        'city': 'Milán',
+        'destination': 'Milán',
+        'description':
+            'Desde el Duomo hasta la Scala, la elegancia italiana te espera',
+        'imageUrl': ImageService.getCityImage('milan'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true,
+        'duration': '3 días',
+        'activities': 8,
+        'totalDays': 3,
+        'views': 0,
+      },
+    ].take(limit).toList();
   }
 
   // Helper method para registrar interacciones del usuario (simplificado)

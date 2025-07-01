@@ -197,15 +197,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       bottomNavigationBar: CustomBottomNavigationBar(
         currentIndex: 0,
         onTap: (index) {
+          final user = FirebaseAuth.instance.currentUser;
           switch (index) {
             case 0:
-              // Already on home, do nothing
+              // Ya estás en Home
               break;
             case 1:
-              NavigationService.navigateToMainScreen('/my-guides');
+              if (user == null) {
+                _showLoginRequiredDialog();
+              } else {
+                NavigationService.navigateToMainScreen('/my-guides');
+              }
               break;
             case 2:
-              NavigationService.navigateToMainScreen('/profile');
+              if (user == null) {
+                _showLoginRequiredDialog();
+              } else {
+                NavigationService.navigateToMainScreen('/profile');
+              }
               break;
           }
         },
@@ -449,6 +458,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showLoginRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Inicia sesión o regístrate'),
+        content: Text(
+            'Debes iniciar sesión o registrarte para acceder a esta función.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              NavigationService.navigateToMainScreen(
+                  '/login'); // Ajusta la ruta si es diferente
+            },
+            child: Text('Iniciar sesión'),
+          ),
+        ],
       ),
     );
   }
