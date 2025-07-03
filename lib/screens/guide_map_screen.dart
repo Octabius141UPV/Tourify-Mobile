@@ -7,6 +7,13 @@ import '../services/map/geocoding_service.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import '../services/map/places_service.dart';
+import 'dart:math';
+import 'package:url_launcher/url_launcher.dart';
+import '../widgets/map/day_selector_header.dart';
+import '../widgets/map/activity_list.dart';
+import '../widgets/map/map_loading_overlay.dart';
+import '../widgets/map/activity_marker_utils.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Pantalla de mapa específica para mostrar las actividades de una guía
 class GuideMapScreen extends StatefulWidget {
@@ -38,6 +45,9 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
   double _loadingProgress = 0.0;
   final MapType _currentMapType = MapType.normal;
   List<PlaceInfo?> _placesInfo = [];
+  int _selectedDay = 1;
+  Set<Polyline> _polylines = {};
+  final ValueNotifier<double> _sheetFraction = ValueNotifier(0.5);
   // Estilo gris para las carreteras (string JSON embebido)
   final String _greyRoadsMapStyle = '''
   [
@@ -58,6 +68,27 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     _initializeMapWithTimeout();
     _loadMarkers();
     _loadPlacesInfo();
+    _initSelectedDay();
+  }
+
+  void _initSelectedDay() {
+    if (widget.activities.isNotEmpty) {
+      setState(() {
+        _selectedDay = widget.activities.map((a) => a.day).reduce((a, b) => a < b ? a : b);
+      });
+    }
+  }
+
+  List<int> get _availableDays {
+    final days = widget.activities.map((a) => a.day).toSet().toList();
+    days.sort();
+    return days;
+  }
+
+  List<Activity> get _activitiesOfSelectedDay {
+    final acts = widget.activities.where((a) => a.day == _selectedDay).toList();
+    acts.sort((a, b) => (a.order ?? 0).compareTo(b.order ?? 0));
+    return acts;
   }
 
   Future<void> _initializeMapWithTimeout() async {
@@ -175,53 +206,6 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     }
   }
 
-  /// Genera un BitmapDescriptor personalizado con color azul y número
-  Future<BitmapDescriptor> _createNumberedMarker(int number) async {
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    const double size = 90.0;
-    final Paint paint = Paint()..color = Color(0xFF0062FF);
-    // Dibuja círculo azul
-    canvas.drawCircle(const Offset(size/2, size/2), size/2, paint);
-    // Dibuja el número
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: number.toString(),
-        style: const TextStyle(
-          fontSize: 40,
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(
-      canvas,
-      Offset((size - textPainter.width) / 2, (size - textPainter.height) / 2),
-    );
-    final img = await recorder.endRecording().toImage(size.toInt(), size.toInt());
-    final data = await img.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.fromBytes(data!.buffer.asUint8List());
-  }
-
-  /// Función para limpiar el nombre de la actividad antes de buscar en Geocoding
-  String limpiarNombreActividad(String nombre) {
-    final palabrasProhibidas = [
-      'tour', 'paseo', 'nocturno', 'ruta', 'visita', 'recorrido', 'guía', 'guiado',
-      'experiencia', 'descubrimiento', 'exploración', 'actividad', 'evento',
-      'cultural', 'histórico', 'gastronómico', 'deportivo', 'familiar', 'divertido',
-      'panorámico', 'temático', 'por', 'en', 'de', 'del', 'la', 'el', 'los', 'las'
-    ];
-    var limpio = nombre;
-    for (final palabra in palabrasProhibidas) {
-      limpio = limpio.replaceAll(RegExp('\\b$palabra\\b', caseSensitive: false), '');
-    }
-    // Eliminar espacios dobles y recortar
-    limpio = limpio.replaceAll(RegExp(' +'), ' ').trim();
-    return limpio;
-  }
-
   /// Crea marcadores para todas las actividades usando geocoding real y marcador personalizado
   Future<void> _createMarkersFromActivities() async {
     final Set<Marker> markers = {};
@@ -231,7 +215,8 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
       final address = '$nombreLimpio, ${widget.city}';
       final LatLng? activityLocation = await GeocodingService.getLatLngFromAddress(address);
       if (activityLocation != null) {
-        final BitmapDescriptor customIcon = await _createNumberedMarker(i + 1);
+        final isSelectedDay = activity.day == _selectedDay;
+        final BitmapDescriptor customIcon = await createNumberedMarker(i + 1, selected: isSelectedDay);
         markers.add(
           Marker(
             markerId: MarkerId('${widget.guideTitle} - ${activity.title}'),
@@ -250,8 +235,6 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
             },
           ),
         );
-      } else {
-        print('No se pudo geocodificar: $address');
       }
     }
     setState(() {
@@ -298,210 +281,126 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant GuideMapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _createPolylineForSelectedDay();
+  }
+
   // =================== MÉTODOS DE UI ===================
   // (Métodos build, widgets auxiliares, loading, error, etc.)
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // Header fijo con degradado azul y botones
-          _buildHeader(context),
-          // Mapa con bordes redondeados arriba
-          Container(
-            margin: const EdgeInsets.only(top: 90), // Deja espacio para el header
-            height: MediaQuery.of(context).size.height,
-            decoration: const BoxDecoration(
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(0),
-                topRight: Radius.circular(0),
-                bottomLeft: Radius.circular(32),
-                bottomRight: Radius.circular(32),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: _buildMapScreen(),
-          ),
-          // Sheet deslizable para actividades (incluye el handle y la lista)
-          DraggableScrollableSheet(
-            initialChildSize: 0.5,
-            minChildSize: 0.10,
-            maxChildSize: 0.7,
-            builder: (context, scrollController) {
-              return Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    topRight: Radius.circular(24),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 10,
-                      offset: Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Indicador azul (handle)
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onVerticalDragUpdate: (details) {},
-                      child: Container(
-                        width: 40,
-                        height: 6,
-                        margin: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Color(0xFF0062FF),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final totalHeight = constraints.maxHeight;
+          return Stack(
+            children: [
+              _buildHeader(context),
+              ValueListenableBuilder<double>(
+                valueListenable: _sheetFraction,
+                builder: (context, fraction, _) {
+                  final mapHeight = totalHeight * (1 - fraction) + 90;
+                  return Container(
+                    margin: const EdgeInsets.only(top: 90),
+                    height: mapHeight > 90 ? mapHeight : 90,
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(0),
+                        topRight: Radius.circular(0),
+                        bottomLeft: Radius.circular(32),
+                        bottomRight: Radius.circular(32),
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    Expanded(
-                      child: ListView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: widget.activities.length,
-                        itemBuilder: (context, index) {
-                          final activity = widget.activities[index];
-                          final isSelected = index == _selectedActivityIndex;
-                          final placeInfo = (index < _placesInfo.length) ? _placesInfo[index] : null;
-                          return GestureDetector(
-                            onTap: () => _centerOnActivity(index),
+                    clipBehavior: Clip.antiAlias,
+                    child: _buildMapScreen(),
+                  );
+                },
+              ),
+              NotificationListener<DraggableScrollableNotification>(
+                onNotification: (notification) {
+                  _sheetFraction.value = notification.extent;
+                  return false;
+                },
+                child: DraggableScrollableSheet(
+                  initialChildSize: 0.5,
+                  minChildSize: 0.10,
+                  maxChildSize: 0.7,
+                  builder: (context, scrollController) {
+                    return Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(10),
+                          topRight: Radius.circular(10),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black12,
+                            blurRadius: 10,
+                            offset: Offset(0, -2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          // Indicador gris, más fino y arrastrable
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onVerticalDragUpdate: (details) {},
                             child: Container(
-                              margin: const EdgeInsets.only(bottom: 16),
+                              width: 48,
+                              height: 4,
+                              margin: const EdgeInsets.symmetric(vertical: 20),
                               decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFFE8F0FE) : Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black12,
-                                    blurRadius: 8,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                                border: isSelected
-                                    ? Border.all(color: Color(0xFF0062FF), width: 2)
-                                    : null,
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  activity.title,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 18,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                              // Marcador azul con número
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                                decoration: BoxDecoration(
-                                                  color: Color(0xFF0062FF),
-                                                  borderRadius: BorderRadius.circular(12),
-                                                ),
-                                                child: Text(
-                                                  '${index + 1}',
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 4),
-                                          // Rating y dirección
-                                          if (placeInfo != null && placeInfo.rating != null)
-                                            Row(
-                                              children: [
-                                                Icon(Icons.star, color: Colors.amber, size: 18),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  placeInfo.rating!.toStringAsFixed(1),
-                                                  style: const TextStyle(fontWeight: FontWeight.w500),
-                                                ),
-                                                if (placeInfo.address != null) ...[
-                                                  const SizedBox(width: 12),
-                                                  Flexible(
-                                                    child: Text(
-                                                      placeInfo.address!,
-                                                      style: const TextStyle(fontSize: 13, color: Colors.grey),
-                                                      maxLines: 1,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
-                                                  ),
-                                                ]
-                                              ],
-                                            ),
-                                          // Review corta
-                                          if (placeInfo != null && placeInfo.review != null)
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 4.0),
-                                              child: Text(
-                                                '"${placeInfo.review!.length > 80 ? placeInfo.review!.substring(0, 80) + '...' : placeInfo.review!}"',
-                                                style: const TextStyle(fontSize: 13, color: Colors.black87, fontStyle: FontStyle.italic),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          // Descripción de la guía
-                                          if (activity.description.isNotEmpty)
-                                            Padding(
-                                              padding: const EdgeInsets.only(top: 4.0),
-                                              child: Text(
-                                                activity.description.length > 80 ? activity.description.substring(0, 80) + '...' : activity.description,
-                                                style: const TextStyle(fontSize: 13, color: Colors.grey),
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          Text(
-                                            '${activity.duration}min',
-                                            style: const TextStyle(
-                                              color: Colors.grey,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                color: Color(0xFFB0B0B0),
+                                borderRadius: BorderRadius.circular(2),
                               ),
                             ),
-                          );
-                        },
+                          ),
+                          // Header de selección de día y botón
+                          DaySelectorHeader(
+                            availableDays: _availableDays,
+                            selectedDay: _selectedDay,
+                            onDaySelected: (day) async {
+                              setState(() {
+                                _selectedDay = day;
+                              });
+                              await _createPolylineForSelectedDay();
+                              await _createMarkersFromActivities();
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          // Lista de actividades filtrada por día
+                          Expanded(
+                            child: ActivityList(
+                              activities: _activitiesOfSelectedDay,
+                              selectedIndex: _selectedActivityIndex >= 0 && _selectedActivityIndex < _activitiesOfSelectedDay.length ? _selectedActivityIndex : -1,
+                              onActivityTap: (index) => _centerOnActivity(index),
+                              placesInfo: _placesInfo,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
-          ),
-        ],
+              ),
+              // Overlay de carga
+              if (_isLoading)
+                const MapLoadingOverlay(),
+            ],
+          );
+        },
       ),
     );
   }
@@ -793,6 +692,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
             zoom: 12.0,
           ),
           markers: _markers,
+          polylines: _polylines,
           myLocationEnabled: false,
           myLocationButtonEnabled: false,
           mapToolbarEnabled: true,
@@ -802,6 +702,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
           onMapCreated: (GoogleMapController controller) {
             print('🗺️ Google Map widget creado exitosamente');
             _onMapCreated(controller);
+            _createPolylineForSelectedDay();
           },
         ),
       ],
@@ -921,14 +822,10 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
         height: 90,
         padding: EdgeInsets.only(top: topPadding, left: 0, right: 0),
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0062FF), Color(0xFF338CFF)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: Colors.white,
           borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
+            bottomLeft: Radius.circular(8),
+            bottomRight: Radius.circular(8),
           ),
           boxShadow: [
             BoxShadow(
@@ -942,7 +839,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+              icon: const Icon(Icons.arrow_back, color: Colors.black, size: 28),
               onPressed: () => Navigator.of(context).pop(),
               tooltip: 'Volver',
             ),
@@ -951,7 +848,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
                 child: Text(
                   widget.guideTitle.isNotEmpty ? widget.guideTitle : widget.city,
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: Colors.black,
                     fontWeight: FontWeight.bold,
                     fontSize: 22,
                     letterSpacing: 0.5,
@@ -962,7 +859,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.my_location, color: Colors.white, size: 26),
+              icon: const Icon(Icons.my_location, color: Colors.black, size: 26),
               onPressed: _centerOnCity,
               tooltip: 'Centrar mapa',
             ),
@@ -970,5 +867,39 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _createPolylineForSelectedDay() async {
+    final List<LatLng> points = [];
+    for (final activity in _activitiesOfSelectedDay) {
+      final nombreLimpio = limpiarNombreActividad(activity.title);
+      final address = '$nombreLimpio, ${widget.city}';
+      final LatLng? activityLocation = await GeocodingService.getLatLngFromAddress(address);
+      if (activityLocation != null) {
+        points.add(activityLocation);
+      }
+    }
+    if (points.length > 1) {
+      setState(() {
+        _polylines = {
+          Polyline(
+            polylineId: PolylineId('ruta-dia-$_selectedDay'),
+            color: const Color(0xFF0062FF),
+            width: 5,
+            points: points,
+          ),
+        };
+      });
+    } else {
+      setState(() {
+        _polylines = {};
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _sheetFraction.dispose();
+    super.dispose();
   }
 }

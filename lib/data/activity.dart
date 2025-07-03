@@ -1,3 +1,5 @@
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 class Activity {
   final String id;
   final String title;
@@ -12,6 +14,7 @@ class Activity {
   final DateTime? startTime;
   final DateTime? endTime;
   final String? price;
+  final LatLng? location;
 
   Activity({
     required this.id,
@@ -27,6 +30,7 @@ class Activity {
     this.startTime,
     this.endTime,
     this.price,
+    this.location,
   });
 
   factory Activity.fromMap(Map<String, dynamic> data, String id) {
@@ -42,6 +46,13 @@ class Activity {
       images = [data['imageUrl'].toString()];
     }
     // NO crear imágenes por defecto aquí - esto causaba el problema de cambio de imágenes
+    LatLng? location;
+    if (data['location'] != null && data['location'] is Map) {
+      final loc = data['location'];
+      if (loc['lat'] != null && loc['lng'] != null) {
+        location = LatLng((loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble());
+      }
+    }
     return Activity(
       id: id,
       title: title,
@@ -72,6 +83,7 @@ class Activity {
       startTime: data['startTime']?.toDate(),
       endTime: data['endTime']?.toDate(),
       price: data['price']?.toString(),
+      location: location,
     );
   }
 
@@ -92,6 +104,7 @@ class Activity {
       'startTime': startTime,
       'endTime': endTime,
       'price': price,
+      'location': location != null ? {'lat': location!.latitude, 'lng': location!.longitude} : null,
     };
   }
 }
