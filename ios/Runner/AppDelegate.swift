@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import GoogleSignIn
+import GoogleMaps
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -17,6 +18,7 @@ import GoogleSignIn
         GIDSignIn.sharedInstance.configuration = config
     }
     
+    GMSServices.provideAPIKey("AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM")
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

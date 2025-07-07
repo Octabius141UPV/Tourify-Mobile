@@ -7,13 +7,15 @@ import '../services/map/geocoding_service.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
 import '../services/map/places_service.dart';
-import 'dart:math';
+import 'dart:math' as math;
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/map/day_selector_header.dart';
 import '../widgets/map/activity_list.dart';
 import '../widgets/map/map_loading_overlay.dart';
 import '../widgets/map/activity_marker_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/common/custom_bottom_navigation_bar.dart';
+import '../utils/activity_utils.dart';
 
 /// Pantalla de mapa específica para mostrar las actividades de una guía
 class GuideMapScreen extends StatefulWidget {
@@ -32,9 +34,9 @@ class GuideMapScreen extends StatefulWidget {
   State<GuideMapScreen> createState() => _GuideMapScreenState();
 }
 
-class _GuideMapScreenState extends State<GuideMapScreen> {
+class _GuideMapScreenState extends State<GuideMapScreen>
+    with TickerProviderStateMixin {
   // =================== VARIABLES Y CONTROLADORES ===================
-  // (Variables de estado, controladores, listas, etc.)
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
   bool _isLoading = true;
@@ -45,9 +47,16 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
   double _loadingProgress = 0.0;
   final MapType _currentMapType = MapType.normal;
   List<PlaceInfo?> _placesInfo = [];
-  int _selectedDay = 1;
+  Set<int> _selectedDays = {};
   Set<Polyline> _polylines = {};
   final ValueNotifier<double> _sheetFraction = ValueNotifier(0.5);
+
+  // =================== CONTROLADORES DE ANIMACIÓN ===================
+  late AnimationController _entranceController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+  late Animation<double> _scaleAnimation;
+
   // Estilo gris para las carreteras (string JSON embebido)
   final String _greyRoadsMapStyle = '''
   [
@@ -60,21 +69,63 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
   ]
   ''';
 
-  // =================== MÉTODOS DE LÓGICA DE DATOS ===================
-  // (Carga de datos, geocodificación, places, creación de marcadores, etc.)
   @override
   void initState() {
     super.initState();
+    _initAnimations();
     _initializeMapWithTimeout();
     _loadMarkers();
     _loadPlacesInfo();
-    _initSelectedDay();
+    _initSelectedDays();
+    _startEntranceAnimation();
   }
 
-  void _initSelectedDay() {
+  /// Inicializa las animaciones de entrada
+  void _initAnimations() {
+    _entranceController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _entranceController,
+      curve: const Interval(0.0, 0.8, curve: Curves.easeOut),
+    ));
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0.0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _entranceController,
+      curve: const Interval(0.0, 1.0, curve: Curves.easeOutCubic),
+    ));
+
+    _scaleAnimation = Tween<double>(
+      begin: 0.9,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _entranceController,
+      curve: const Interval(0.2, 1.0, curve: Curves.easeOutBack),
+    ));
+  }
+
+  /// Inicia la animación de entrada
+  void _startEntranceAnimation() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _entranceController.forward();
+      }
+    });
+  }
+
+  void _initSelectedDays() {
     if (widget.activities.isNotEmpty) {
       setState(() {
-        _selectedDay = widget.activities.map((a) => a.day).reduce((a, b) => a < b ? a : b);
+        // Inicializar con todos los días disponibles seleccionados
+        _selectedDays = widget.activities.map((a) => a.day).toSet();
       });
     }
   }
@@ -85,9 +136,15 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     return days;
   }
 
-  List<Activity> get _activitiesOfSelectedDay {
-    final acts = widget.activities.where((a) => a.day == _selectedDay).toList();
-    acts.sort((a, b) => (a.order ?? 0).compareTo(b.order ?? 0));
+  List<Activity> get _activitiesOfSelectedDays {
+    final acts =
+        widget.activities.where((a) => _selectedDays.contains(a.day)).toList();
+    // Ordenar primero por día, luego por orden dentro del día
+    acts.sort((a, b) {
+      final dayComparison = a.day.compareTo(b.day);
+      if (dayComparison != 0) return dayComparison;
+      return (a.order ?? 0).compareTo(b.order ?? 0);
+    });
     return acts;
   }
 
@@ -192,7 +249,8 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
   /// Obtiene las coordenadas reales de la ciudad usando GeocodingService
   Future<void> _getCityLocation() async {
     try {
-      final LatLng? cityLatLng = await GeocodingService.getLatLngFromAddress(widget.city);
+      final LatLng? cityLatLng =
+          await GeocodingService.getLatLngFromAddress(widget.city);
       if (cityLatLng != null) {
         _centerLocation = cityLatLng;
         print('🎯 Ciudad: ${widget.city} -> $_centerLocation');
@@ -209,34 +267,94 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
   /// Crea marcadores para todas las actividades usando geocoding real y marcador personalizado
   Future<void> _createMarkersFromActivities() async {
     final Set<Marker> markers = {};
+    List<Activity> activitiesNeedingUpdate = [];
+    bool hasUpdatedActivities = false;
+
     for (int i = 0; i < widget.activities.length; i++) {
       final activity = widget.activities[i];
-      final nombreLimpio = limpiarNombreActividad(activity.title);
-      final address = '$nombreLimpio, ${widget.city}';
-      final LatLng? activityLocation = await GeocodingService.getLatLngFromAddress(address);
-      if (activityLocation != null) {
-        final isSelectedDay = activity.day == _selectedDay;
-        final BitmapDescriptor customIcon = await createNumberedMarker(i + 1, selected: isSelectedDay);
+      LatLng? activityLocation = activity.location;
+
+      // Si la actividad no tiene coordenadas guardadas, hacer geocodificación
+      if (activityLocation == null) {
+        print('🔍 Geocodificando actividad: ${activity.title}');
+        final nombreLimpio = limpiarNombreActividad(activity.title);
+        final address = '$nombreLimpio, ${widget.city}';
+        activityLocation = await GeocodingService.getLatLngFromAddress(address);
+
+        // Si se obtuvo la ubicación, marcar para actualizar
+        if (activityLocation != null) {
+          print(
+              '📍 Coordenadas obtenidas para ${activity.title}: $activityLocation');
+          final updatedActivity = Activity(
+            id: activity.id,
+            title: activity.title,
+            description: activity.description,
+            duration: activity.duration,
+            day: activity.day,
+            order: activity.order,
+            images: activity.images,
+            city: activity.city,
+            category: activity.category,
+            likes: activity.likes,
+            startTime: activity.startTime,
+            endTime: activity.endTime,
+            price: activity.price,
+            location: activityLocation,
+          );
+
+          activitiesNeedingUpdate.add(updatedActivity);
+          hasUpdatedActivities = true;
+        } else {
+          print('❌ No se pudo obtener ubicación para: ${activity.title}');
+        }
+      } else {
+        print('✅ Usando coordenadas guardadas para: ${activity.title}');
+      }
+
+      // Crear marcador si tenemos ubicación
+      final isSelectedDay = _selectedDays.contains(activity.day);
+      if (activityLocation != null && isSelectedDay) {
+        // Usar marcador especial si esta actividad está seleccionada
+        final bool isThisActivitySelected = i == _selectedActivityIndex;
+
+        final BitmapDescriptor customIcon = isThisActivitySelected
+            ? await createPulsingMarker(activity, i + 1)
+            : await createCategoryMarker(
+                activity,
+                i + 1,
+                selected: true,
+              );
+
         markers.add(
           Marker(
             markerId: MarkerId('${widget.guideTitle} - ${activity.title}'),
             position: activityLocation,
             infoWindow: InfoWindow(
-              title: '${widget.guideTitle} - ${activity.title}',
-              snippet: activity.description.length > 50
-                  ? '${activity.description.substring(0, 50)}...'
-                  : activity.description,
+              title: '${activity.title}',
+              snippet:
+                  '${activity.duration}min • ${activity.description.length > 40 ? '${activity.description.substring(0, 40)}...' : activity.description}',
             ),
             icon: customIcon,
             onTap: () {
               setState(() {
                 _selectedActivityIndex = i;
               });
+              // Recrear marcadores para actualizar el seleccionado
+              _createMarkersFromActivities();
             },
           ),
         );
       }
     }
+
+    // Notificar sobre nuevas coordenadas obtenidas (pero no actualizar aquí)
+    if (hasUpdatedActivities) {
+      print(
+          '💡 Se obtuvieron ${activitiesNeedingUpdate.length} nuevas coordenadas');
+      // Aquí podrías implementar una función callback para notificar al GuideDetailScreen
+      // sobre las nuevas coordenadas obtenidas
+    }
+
     setState(() {
       _markers = markers;
     });
@@ -269,138 +387,308 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     });
   }
 
-  void _centerOnActivity(int index) {
-    if (_mapController != null && index < _markers.length) {
-      final marker = _markers.elementAt(index);
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(marker.position, 15.0),
-      );
-      setState(() {
-        _selectedActivityIndex = index;
-      });
+  void _centerOnActivity(int index) async {
+    if (_mapController != null &&
+        index >= 0 &&
+        index < _activitiesOfSelectedDays.length) {
+      final activity = _activitiesOfSelectedDays[index];
+
+      // Buscar la ubicación de esta actividad
+      LatLng? activityLocation = activity.location;
+
+      if (activityLocation == null) {
+        // Si no tiene coordenadas guardadas, usar geocodificación
+        final nombreLimpio = limpiarNombreActividad(activity.title);
+        final address = '$nombreLimpio, ${widget.city}';
+        activityLocation = await GeocodingService.getLatLngFromAddress(address);
+      }
+
+      if (activityLocation != null) {
+        // Animar la cámara hacia la actividad
+        await _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(activityLocation, 16.0),
+        );
+
+        // Actualizar el índice seleccionado
+        setState(() {
+          _selectedActivityIndex = index;
+        });
+
+        // Recrear marcadores para mostrar el seleccionado
+        await _updateMarkersWithTransition();
+
+        // Mostrar un mensaje de confirmación
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.location_on, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Centrado en: ${activity.title}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF0062FF),
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+      } else {
+        // Mostrar error si no se pudo encontrar la ubicación
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline,
+                      color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No se pudo encontrar la ubicación de ${activity.title}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+      }
     }
   }
 
   @override
   void didUpdateWidget(covariant GuideMapScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _createPolylineForSelectedDay();
+    _createPolylinesForSelectedDays();
   }
 
   // =================== MÉTODOS DE UI ===================
-  // (Métodos build, widgets auxiliares, loading, error, etc.)
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final totalHeight = constraints.maxHeight;
-          return Stack(
-            children: [
-              _buildHeader(context),
-              ValueListenableBuilder<double>(
-                valueListenable: _sheetFraction,
-                builder: (context, fraction, _) {
-                  final mapHeight = totalHeight * (1 - fraction) + 90;
-                  return Container(
-                    margin: const EdgeInsets.only(top: 90),
-                    height: mapHeight > 90 ? mapHeight : 90,
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: SlideTransition(
+        position: _slideAnimation,
+        child: ScaleTransition(
+          scale: _scaleAnimation,
+          child: Scaffold(
+            backgroundColor: Colors.white,
+            body: Column(
+              children: [
+                // Header fijo arriba con SafeArea
+                SafeArea(
+                  bottom: false,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: const BoxDecoration(
+                      color: Colors.white,
                       borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(0),
-                        topRight: Radius.circular(0),
-                        bottomLeft: Radius.circular(32),
-                        bottomRight: Radius.circular(32),
+                        bottomLeft: Radius.circular(8),
+                        bottomRight: Radius.circular(8),
                       ),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black12,
-                          blurRadius: 10,
-                          offset: Offset(0, 4),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
                         ),
                       ],
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: _buildMapScreen(),
-                  );
-                },
-              ),
-              NotificationListener<DraggableScrollableNotification>(
-                onNotification: (notification) {
-                  _sheetFraction.value = notification.extent;
-                  return false;
-                },
-                child: DraggableScrollableSheet(
-                  initialChildSize: 0.5,
-                  minChildSize: 0.10,
-                  maxChildSize: 0.7,
-                  builder: (context, scrollController) {
-                    return Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(10),
-                          topRight: Radius.circular(10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back,
+                              color: Colors.black, size: 28),
+                          onPressed: () => Navigator.of(context).pop(),
+                          tooltip: 'Volver',
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 10,
-                            offset: Offset(0, -2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          // Indicador gris, más fino y arrastrable
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onVerticalDragUpdate: (details) {},
-                            child: Container(
-                              width: 48,
-                              height: 4,
-                              margin: const EdgeInsets.symmetric(vertical: 20),
-                              decoration: BoxDecoration(
-                                color: Color(0xFFB0B0B0),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            widget.guideTitle.isNotEmpty
+                                ? widget.guideTitle
+                                : widget.city,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 22,
+                              letterSpacing: 0.5,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          // Header de selección de día y botón
-                          DaySelectorHeader(
-                            availableDays: _availableDays,
-                            selectedDay: _selectedDay,
-                            onDaySelected: (day) async {
-                              setState(() {
-                                _selectedDay = day;
-                              });
-                              await _createPolylineForSelectedDay();
-                              await _createMarkersFromActivities();
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.my_location,
+                              color: Colors.black, size: 26),
+                          onPressed: _centerOnCity,
+                          tooltip: 'Centrar mapa',
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.fit_screen,
+                              color: Colors.black, size: 26),
+                          onPressed: _fitMarkersInView,
+                          tooltip: 'Ajustar vista',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Resto del contenido (mapa + overlays)
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final totalHeight = constraints.maxHeight;
+                      return Stack(
+                        children: [
+                          // Container que limita el área visible del mapa
+                          ValueListenableBuilder<double>(
+                            valueListenable: _sheetFraction,
+                            builder: (context, fraction, _) {
+                              // Calcular la altura disponible para el mapa basándose en la fracción del sheet
+                              final mapHeight = totalHeight *
+                                  (1 -
+                                      fraction *
+                                          0.8); // 0.8 para dejar espacio mínimo
+                              return Container(
+                                height: mapHeight,
+                                child: _centerLocation != null
+                                    ? GoogleMap(
+                                        initialCameraPosition: CameraPosition(
+                                          target: _centerLocation!,
+                                          zoom: 12.0,
+                                        ),
+                                        markers: _markers,
+                                        polylines: _polylines,
+                                        myLocationEnabled: false,
+                                        myLocationButtonEnabled: false,
+                                        mapToolbarEnabled: true,
+                                        zoomControlsEnabled: true,
+                                        compassEnabled: true,
+                                        mapType: _currentMapType,
+                                        onMapCreated:
+                                            (GoogleMapController controller) {
+                                          print(
+                                              '🗺️ Google Map widget creado exitosamente');
+                                          _onMapCreated(controller);
+                                          _createPolylinesForSelectedDays();
+                                        },
+                                      )
+                                    : Container(),
+                              );
                             },
                           ),
-                          const SizedBox(height: 8),
-                          // Lista de actividades filtrada por día
-                          Expanded(
-                            child: ActivityList(
-                              activities: _activitiesOfSelectedDay,
-                              selectedIndex: _selectedActivityIndex >= 0 && _selectedActivityIndex < _activitiesOfSelectedDay.length ? _selectedActivityIndex : -1,
-                              onActivityTap: (index) => _centerOnActivity(index),
-                              placesInfo: _placesInfo,
+                          NotificationListener<DraggableScrollableNotification>(
+                            onNotification: (notification) {
+                              _sheetFraction.value = notification.extent;
+                              return false;
+                            },
+                            child: DraggableScrollableSheet(
+                              initialChildSize: 0.5,
+                              minChildSize: 0.15,
+                              maxChildSize: 0.8,
+                              snap: true,
+                              snapSizes: const [0.15, 0.5, 0.8],
+                              builder: (context, scrollController) {
+                                return Container(
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: Radius.circular(16),
+                                      topRight: Radius.circular(16),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black26,
+                                        blurRadius: 12,
+                                        offset: Offset(0, -4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      // Indicador gris, más fino y arrastrable
+                                      GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onVerticalDragUpdate: (details) {},
+                                        child: Container(
+                                          width: 60,
+                                          height: 5,
+                                          margin: const EdgeInsets.symmetric(
+                                              vertical: 16),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF999999),
+                                            borderRadius:
+                                                BorderRadius.circular(3),
+                                          ),
+                                        ),
+                                      ),
+                                      // Header de selección de días y botón
+                                      DaySelectorHeader(
+                                        availableDays: _availableDays,
+                                        selectedDays: _selectedDays,
+                                        onDaysSelected: (days) async {
+                                          setState(() {
+                                            _selectedDays = days;
+                                          });
+                                          await _createPolylinesForSelectedDays();
+                                          await _updateMarkersWithTransition();
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      // Lista de actividades filtrada por días
+                                      Expanded(
+                                        child: ActivityList(
+                                          activities: _activitiesOfSelectedDays,
+                                          selectedIndex: _selectedActivityIndex >=
+                                                      0 &&
+                                                  _selectedActivityIndex <
+                                                      _activitiesOfSelectedDays
+                                                          .length
+                                              ? _selectedActivityIndex
+                                              : -1,
+                                          onActivityTap: (index) =>
+                                              _centerOnActivity(index),
+                                          placesInfo: _placesInfo,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
                           ),
+                          // Overlay de carga
+                          if (_isLoading) const MapLoadingOverlay(),
                         ],
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-              // Overlay de carga
-              if (_isLoading)
-                const MapLoadingOverlay(),
-            ],
-          );
-        },
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -685,7 +973,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
 
     return Stack(
       children: [
-        // Mapa principal
+        // El mapa debe ir primero (fondo)
         GoogleMap(
           initialCameraPosition: CameraPosition(
             target: _centerLocation!,
@@ -702,7 +990,7 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
           onMapCreated: (GoogleMapController controller) {
             print('🗺️ Google Map widget creado exitosamente');
             _onMapCreated(controller);
-            _createPolylineForSelectedDay();
+            _createPolylinesForSelectedDays();
           },
         ),
       ],
@@ -803,7 +1091,8 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
   Future<void> _loadPlacesInfo() async {
     final List<PlaceInfo?> infos = [];
     for (final activity in widget.activities) {
-      final info = await PlacesService.getPlaceInfo(activity.title, widget.city);
+      final info =
+          await PlacesService.getPlaceInfo(activity.title, widget.city);
       infos.add(info);
     }
     setState(() {
@@ -811,94 +1100,111 @@ class _GuideMapScreenState extends State<GuideMapScreen> {
     });
   }
 
-  // Header fijo con degradado azul y botones
-  Widget _buildHeader(BuildContext context) {
-    final double topPadding = MediaQuery.of(context).padding.top;
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        height: 90,
-        padding: EdgeInsets.only(top: topPadding, left: 0, right: 0),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(8),
-            bottomRight: Radius.circular(8),
+  Future<void> _createPolylinesForSelectedDays() async {
+    final Set<Polyline> polylines = {};
+
+    // Crear una polilínea para cada día seleccionado
+    for (final day in _selectedDays) {
+      final dayActivities =
+          _activitiesOfSelectedDays.where((a) => a.day == day).toList();
+      if (dayActivities.isEmpty) continue;
+
+      final List<LatLng> points = [];
+      for (final activity in dayActivities) {
+        LatLng? activityLocation = activity.location;
+
+        // Si la actividad no tiene coordenadas guardadas, hacer geocodificación
+        if (activityLocation == null) {
+          print('🔍 Geocodificando para polilínea: ${activity.title}');
+          final nombreLimpio = limpiarNombreActividad(activity.title);
+          final address = '$nombreLimpio, ${widget.city}';
+          activityLocation =
+              await GeocodingService.getLatLngFromAddress(address);
+        } else {
+          print(
+              '✅ Usando coordenadas guardadas para polilínea: ${activity.title}');
+        }
+
+        if (activityLocation != null) {
+          points.add(activityLocation);
+        }
+      }
+
+      if (points.length > 1) {
+        polylines.add(
+          Polyline(
+            polylineId: PolylineId('ruta-dia-$day'),
+            color: const Color(0xFF0062FF), // Azul para las rutas seleccionadas
+            width: 5,
+            points: points,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 8,
-              offset: Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.black, size: 28),
-              onPressed: () => Navigator.of(context).pop(),
-              tooltip: 'Volver',
-            ),
-            Expanded(
-              child: Center(
-                child: Text(
-                  widget.guideTitle.isNotEmpty ? widget.guideTitle : widget.city,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 22,
-                    letterSpacing: 0.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.my_location, color: Colors.black, size: 26),
-              onPressed: _centerOnCity,
-              tooltip: 'Centrar mapa',
-            ),
-          ],
-        ),
+        );
+      }
+    }
+
+    setState(() {
+      _polylines = polylines;
+    });
+  }
+
+  /// Actualiza los marcadores con transición suave
+  Future<void> _updateMarkersWithTransition() async {
+    // Limpiar marcadores actuales
+    setState(() {
+      _markers.clear();
+    });
+
+    // Pequeña pausa para el efecto visual
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    // Recrear marcadores
+    await _createMarkersFromActivities();
+  }
+
+  /// Centra el mapa para mostrar todos los marcadores visibles
+  void _fitMarkersInView() {
+    if (_markers.isEmpty || _mapController == null) return;
+
+    final bounds = _calculateBounds(_markers.map((m) => m.position).toList());
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(
+        bounds,
+        100.0, // Padding
       ),
     );
   }
 
-  Future<void> _createPolylineForSelectedDay() async {
-    final List<LatLng> points = [];
-    for (final activity in _activitiesOfSelectedDay) {
-      final nombreLimpio = limpiarNombreActividad(activity.title);
-      final address = '$nombreLimpio, ${widget.city}';
-      final LatLng? activityLocation = await GeocodingService.getLatLngFromAddress(address);
-      if (activityLocation != null) {
-        points.add(activityLocation);
-      }
+  /// Calcula los límites para un conjunto de coordenadas
+  LatLngBounds _calculateBounds(List<LatLng> coordinates) {
+    if (coordinates.isEmpty) {
+      return LatLngBounds(
+        southwest: _centerLocation ?? const LatLng(40.4168, -3.7038),
+        northeast: _centerLocation ?? const LatLng(40.4168, -3.7038),
+      );
     }
-    if (points.length > 1) {
-      setState(() {
-        _polylines = {
-          Polyline(
-            polylineId: PolylineId('ruta-dia-$_selectedDay'),
-            color: const Color(0xFF0062FF),
-            width: 5,
-            points: points,
-          ),
-        };
-      });
-    } else {
-      setState(() {
-        _polylines = {};
-      });
+
+    double minLat = coordinates.first.latitude;
+    double maxLat = coordinates.first.latitude;
+    double minLng = coordinates.first.longitude;
+    double maxLng = coordinates.first.longitude;
+
+    for (final coord in coordinates) {
+      minLat = math.min(minLat, coord.latitude);
+      maxLat = math.max(maxLat, coord.latitude);
+      minLng = math.min(minLng, coord.longitude);
+      maxLng = math.max(maxLng, coord.longitude);
     }
+
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
   }
 
   @override
   void dispose() {
+    _entranceController.dispose();
     _sheetFraction.dispose();
     super.dispose();
   }

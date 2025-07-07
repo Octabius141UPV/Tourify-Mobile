@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import '../data/activity.dart';
 
 /// Función para determinar si una actividad es cultural
@@ -54,4 +55,37 @@ bool isTourActivity(Activity activity) {
     return activity.category!.toLowerCase() == 'tour';
   }
   return false;
+}
+
+class ActivityUtils {
+  static List<Activity> groupActivitiesByDay(List<Activity> activities) {
+    // Tu implementación actual aquí
+    return activities;
+  }
+
+  static List<Activity> filterActivitiesByDay(
+      List<Activity> activities, int day) {
+    return activities.where((activity) => activity.day == day).toList();
+  }
+}
+
+class DayColors {
+  // Colores para cada día
+  static const List<Color> _dayColors = [
+    Color(0xFF0062FF), // Día 1 - Azul
+    Color(0xFFFF6B35), // Día 2 - Naranja
+    Color(0xFF2ECC71), // Día 3 - Verde
+    Color(0xFFE74C3C), // Día 4 - Rojo
+    Color(0xFF9B59B6), // Día 5 - Morado
+    Color(0xFFF39C12), // Día 6 - Amarillo
+    Color(0xFF1ABC9C), // Día 7 - Turquesa
+    Color(0xFFE91E63), // Día 8 - Rosa
+    Color(0xFF34495E), // Día 9 - Gris oscuro
+    Color(0xFF16A085), // Día 10 - Verde azulado
+  ];
+
+  /// Obtiene el color para un día específico
+  static Color getColorForDay(int day) {
+    return _dayColors[(day - 1) % _dayColors.length];
+  }
 }

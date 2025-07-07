@@ -3,14 +3,16 @@
 <plist version="1.0">
 	<dict>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Esta app necesita acceder a tu ubicación para mostrarla en el mapa.</string>
+		<string>Necesitamos tu ubicación para mostrar el mapa correctamente.</string>
 
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 		<string>Esta app necesita acceder a tu ubicación en segundo plano para funciones avanzadas.</string>
 
+		<key>io.flutter.embedded_views_preview</key>
+		<true/>
 
 		<key>GMSApiKey</key>
-		<string>$(GOOGLE_MAPS_API_KEY)</string>
+		<string>AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM</string>
 
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>

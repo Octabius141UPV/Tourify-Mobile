@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+import '../../utils/activity_utils.dart';
 
 class DaySelectorHeader extends StatelessWidget {
   final List<int> availableDays;
-  final int selectedDay;
-  final ValueChanged<int> onDaySelected;
+  final Set<int> selectedDays;
+  final ValueChanged<Set<int>> onDaysSelected;
 
   const DaySelectorHeader({
     super.key,
     required this.availableDays,
-    required this.selectedDay,
-    required this.onDaySelected,
+    required this.selectedDays,
+    required this.onDaysSelected,
   });
 
   @override
@@ -22,27 +23,44 @@ class DaySelectorHeader extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: availableDays.map((day) {
-            final selected = day == selectedDay;
+            final selected = selectedDays.contains(day);
+            final selectedColor =
+                const Color(0xFF0062FF); // Azul para seleccionados
+            final unselectedColor =
+                Colors.grey.shade400; // Grisáceo para no seleccionados
+
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4.0),
-              child: ChoiceChip(
+              child: FilterChip(
                 label: Text(
                   'Día $day',
                   style: TextStyle(
-                    color: selected ? Colors.white : Colors.black,
+                    color: selected ? Colors.white : unselectedColor,
                     fontWeight: FontWeight.bold,
-                    fontSize: 18,
+                    fontSize: 16,
                   ),
                 ),
                 selected: selected,
-                selectedColor: const Color(0xFF0062FF),
-                backgroundColor: Colors.grey[200],
-                labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+                selectedColor: selectedColor,
+                backgroundColor: selected
+                    ? selectedColor.withOpacity(0.1)
+                    : unselectedColor.withOpacity(0.1),
+                checkmarkColor: Colors.white,
                 onSelected: (val) {
-                  if (val) onDaySelected(day);
+                  final newSelection = Set<int>.from(selectedDays);
+                  if (val) {
+                    newSelection.add(day);
+                  } else {
+                    newSelection.remove(day);
+                  }
+                  onDaysSelected(newSelection);
                 },
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(
+                    color: selected ? selectedColor : unselectedColor,
+                    width: selected ? 0 : 1.5,
+                  ),
                 ),
               ),
             );
@@ -51,4 +69,4 @@ class DaySelectorHeader extends StatelessWidget {
       ),
     );
   }
-} 
+}

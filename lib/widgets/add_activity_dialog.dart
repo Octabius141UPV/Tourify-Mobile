@@ -4,6 +4,7 @@ import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:google_places_flutter/model/prediction.dart';
 import 'package:tourify_flutter/services/api_service.dart';
 import 'package:tourify_flutter/data/activity.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class AddActivityDialog extends StatefulWidget {
   final int dayNumber;
@@ -105,6 +106,10 @@ class _AddActivityDialogState extends State<AddActivityDialog> {
         startTime: null,
         endTime: null,
         price: null,
+        location: _selectedPlace!.lat != null && _selectedPlace!.lng != null
+            ? LatLng(double.parse(_selectedPlace!.lat!),
+                double.parse(_selectedPlace!.lng!))
+            : null, // Usar coordenadas de Google Places
       );
 
       await widget.onSave(newActivity);

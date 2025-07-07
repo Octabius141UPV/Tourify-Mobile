@@ -15,6 +15,8 @@ class Activity {
   final DateTime? endTime;
   final String? price;
   final LatLng? location;
+  final double? googleRating;
+  final String? googleReview;
 
   Activity({
     required this.id,
@@ -31,6 +33,8 @@ class Activity {
     this.endTime,
     this.price,
     this.location,
+    this.googleRating,
+    this.googleReview,
   });
 
   factory Activity.fromMap(Map<String, dynamic> data, String id) {
@@ -50,7 +54,8 @@ class Activity {
     if (data['location'] != null && data['location'] is Map) {
       final loc = data['location'];
       if (loc['lat'] != null && loc['lng'] != null) {
-        location = LatLng((loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble());
+        location = LatLng(
+            (loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble());
       }
     }
     return Activity(
@@ -84,6 +89,10 @@ class Activity {
       endTime: data['endTime']?.toDate(),
       price: data['price']?.toString(),
       location: location,
+      googleRating: data['googleRating'] != null
+          ? (data['googleRating'] as num).toDouble()
+          : null,
+      googleReview: data['googleReview']?.toString(),
     );
   }
 
@@ -104,7 +113,11 @@ class Activity {
       'startTime': startTime,
       'endTime': endTime,
       'price': price,
-      'location': location != null ? {'lat': location!.latitude, 'lng': location!.longitude} : null,
+      'location': location != null
+          ? {'lat': location!.latitude, 'lng': location!.longitude}
+          : null,
+      'googleRating': googleRating,
+      'googleReview': googleReview,
     };
   }
 }

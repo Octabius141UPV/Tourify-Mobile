@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/activity.dart';
 import '../../services/map/places_service.dart';
+import '../../utils/activity_utils.dart';
 
 class ActivityList extends StatelessWidget {
   final List<Activity> activities;
@@ -24,7 +25,9 @@ class ActivityList extends StatelessWidget {
       itemBuilder: (context, index) {
         final activity = activities[index];
         final isSelected = index == selectedIndex;
-        final placeInfo = (placesInfo != null && index < placesInfo!.length) ? placesInfo![index] : null;
+        final placeInfo = (placesInfo != null && index < placesInfo!.length)
+            ? placesInfo![index]
+            : null;
         return GestureDetector(
           onTap: () => onActivityTap(index),
           child: Container(
@@ -53,6 +56,24 @@ class ActivityList extends StatelessWidget {
                       children: [
                         Row(
                           children: [
+                            // Chip del día
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: DayColors.getColorForDay(activity.day),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Día ${activity.day}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 activity.title,
@@ -65,7 +86,8 @@ class ActivityList extends StatelessWidget {
                               ),
                             ),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: Color(0xFF0062FF),
                                 borderRadius: BorderRadius.circular(12),
@@ -88,14 +110,16 @@ class ActivityList extends StatelessWidget {
                               const SizedBox(width: 4),
                               Text(
                                 placeInfo.rating!.toStringAsFixed(1),
-                                style: const TextStyle(fontWeight: FontWeight.w500),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w500),
                               ),
                               if (placeInfo.address != null) ...[
                                 const SizedBox(width: 12),
                                 Flexible(
                                   child: Text(
                                     placeInfo.address!,
-                                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                                    style: const TextStyle(
+                                        fontSize: 13, color: Colors.grey),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -108,7 +132,10 @@ class ActivityList extends StatelessWidget {
                             padding: const EdgeInsets.only(top: 4.0),
                             child: Text(
                               '"${placeInfo.review!.length > 80 ? placeInfo.review!.substring(0, 80) + '...' : placeInfo.review!}"',
-                              style: const TextStyle(fontSize: 13, color: Colors.black87, fontStyle: FontStyle.italic),
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.black87,
+                                  fontStyle: FontStyle.italic),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -117,8 +144,12 @@ class ActivityList extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.only(top: 4.0),
                             child: Text(
-                              activity.description.length > 80 ? activity.description.substring(0, 80) + '...' : activity.description,
-                              style: const TextStyle(fontSize: 13, color: Colors.grey),
+                              activity.description.length > 80
+                                  ? activity.description.substring(0, 80) +
+                                      '...'
+                                  : activity.description,
+                              style: const TextStyle(
+                                  fontSize: 13, color: Colors.grey),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -141,4 +172,4 @@ class ActivityList extends StatelessWidget {
       },
     );
   }
-} 
+}
