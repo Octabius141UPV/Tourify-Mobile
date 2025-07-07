@@ -93,6 +93,9 @@ class GuideService {
         );
       }
 
+      // Método para actualizar estadísticas del usuario cuando crea una guía
+      await updateUserGuideStats(userId);
+
       return guideRef.id;
     } catch (e) {
       print('Error creating guide: $e');
@@ -500,81 +503,104 @@ class GuideService {
     return ImageService.getCityImage(normalizedCity);
   }
 
-  // Get top public guides - Guías predefinidas
+  // Get top public guides - Guías curadas por el equipo
   static Future<List<Map<String, dynamic>>> getTopPublicGuides(
       {int limit = 10}) async {
+    // Permitir acceso a invitados: no comprobar autenticación
+    // Guías curadas por el equipo Tourify (contenido experto)
+    return [
+      {
+        'id': 'predefined_berlin',
+        'title': 'Berlín en 3 días',
+        'author': 'Equipo Tourify',
+        'city': 'Berlín',
+        'destination': 'Berlín',
+        'description':
+            'Descubre la vibrante capital alemana con historia, cultura y vida nocturna',
+        'imageUrl': ImageService.getCityImage('berlin'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true, // Marcar como guía predefinida
+        'duration': '3 días',
+        'activities': 9,
+        'totalDays': 3,
+        'views': 0,
+      },
+      {
+        'id': 'predefined_budapest',
+        'title': 'Budapest, la perla del Danubio',
+        'author': 'Equipo Tourify',
+        'city': 'Budapest',
+        'destination': 'Budapest',
+        'description':
+            'Explora los baños termales, el Parlamento y los barrios históricos',
+        'imageUrl': ImageService.getCityImage('budapest'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true,
+        'duration': '4 días',
+        'activities': 11,
+        'totalDays': 4,
+        'views': 0,
+      },
+      {
+        'id': 'predefined_rome',
+        'title': 'Roma eterna',
+        'author': 'Equipo Tourify',
+        'city': 'Roma',
+        'destination': 'Roma',
+        'description':
+            'Sumérgete en la historia antigua del Coliseo, Vaticano y Fontana de Trevi',
+        'imageUrl': ImageService.getCityImage('roma'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true,
+        'duration': '5 días',
+        'activities': 15,
+        'totalDays': 5,
+        'views': 0,
+      },
+      {
+        'id': 'predefined_milan',
+        'title': 'Milán, moda y cultura',
+        'author': 'Equipo Tourify',
+        'city': 'Milán',
+        'destination': 'Milán',
+        'description':
+            'Desde el Duomo hasta la Scala, la elegancia italiana te espera',
+        'imageUrl': ImageService.getCityImage('milan'),
+        'createdAt': DateTime.now(),
+        'isPublic': true,
+        'isPredefined': true,
+        'duration': '3 días',
+        'activities': 8,
+        'totalDays': 3,
+        'views': 0,
+      },
+    ].take(limit).toList();
+  }
+
+  // Helper method para registrar interacciones del usuario (simplificado)
+  static Future<void> logUserInteraction(
+      String userId, String action, Map<String, dynamic> data) async {
     try {
-      // Devolver 4 guías predefinidas de Berlín, Budapest, Roma y Milán
-      return [
-        {
-          'id': 'predefined_berlin',
-          'title': 'Berlín en 3 días',
-          'author': 'Equipo Tourify',
-          'city': 'Berlín',
-          'destination': 'Berlín',
-          'description':
-              'Descubre la vibrante capital alemana con historia, cultura y vida nocturna',
-          'imageUrl': ImageService.getCityImage('berlin'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'duration': '3 días',
-          'activities': 9,
-          'totalDays': 3,
-          'views': 0,
-        },
-        {
-          'id': 'predefined_budapest',
-          'title': 'Budapest, la perla del Danubio',
-          'author': 'Equipo Tourify',
-          'city': 'Budapest',
-          'destination': 'Budapest',
-          'description':
-              'Explora los baños termales, el Parlamento y los barrios históricos',
-          'imageUrl': ImageService.getCityImage('budapest'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'duration': '4 días',
-          'activities': 11,
-          'totalDays': 4,
-          'views': 0,
-        },
-        {
-          'id': 'predefined_rome',
-          'title': 'Roma eterna',
-          'author': 'Equipo Tourify',
-          'city': 'Roma',
-          'destination': 'Roma',
-          'description':
-              'Sumérgete en la historia antigua del Coliseo, Vaticano y Fontana de Trevi',
-          'imageUrl': ImageService.getCityImage('roma'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'duration': '5 días',
-          'activities': 15,
-          'totalDays': 5,
-          'views': 0,
-        },
-        {
-          'id': 'predefined_milan',
-          'title': 'Milán, moda y cultura',
-          'author': 'Equipo Tourify',
-          'city': 'Milán',
-          'destination': 'Milán',
-          'description':
-              'Desde el Duomo hasta la Scala, la elegancia italiana te espera',
-          'imageUrl': ImageService.getCityImage('milan'),
-          'createdAt': DateTime.now(),
-          'isPublic': true,
-          'duration': '3 días',
-          'activities': 8,
-          'totalDays': 3,
-          'views': 0,
-        },
-      ].take(limit).toList();
+      await _firestore.collection('user_interactions').add({
+        'userId': userId,
+        'action': action,
+        'data': data,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
-      print('Error fetching predefined guides: $e');
-      return [];
+      print('Error logging user interaction: $e');
     }
+  }
+
+  // Helper method para reordenar guías según preferencias
+  static List<Map<String, dynamic>> _reorderByPreference(
+      List<Map<String, dynamic>> guides, String preferredId) {
+    final preferredGuide = guides.firstWhere((g) => g['id'] == preferredId);
+    final otherGuides = guides.where((g) => g['id'] != preferredId).toList();
+    return [preferredGuide, ...otherGuides];
   }
 
   // Método para obtener datos mockeados completos de guías predefinidas
@@ -1392,6 +1418,137 @@ class GuideService {
     } catch (e) {
       print('Error fetching community public guides: $e');
       return [];
+    }
+  }
+
+  // Método para actualizar estadísticas del usuario cuando crea una guía
+  static Future<void> updateUserGuideStats(String userId) async {
+    try {
+      // Simple contador de guías creadas para justificar login
+      await _firestore.collection('user_interactions').add({
+        'userId': userId,
+        'action': 'guide_created',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error logging guide creation: $e');
+    }
+  }
+
+  // Copiar una guía predefinida a la cuenta del usuario
+  static Future<String?> copyPredefinedGuide(String predefinedGuideId) async {
+    try {
+      if (!AuthService.isAuthenticated) {
+        throw Exception('User must be authenticated to copy a guide');
+      }
+
+      final String userId = AuthService.userId!;
+
+      // Obtener los datos de la guía predefinida
+      final predefinedGuide = getMockedGuideDetails(predefinedGuideId);
+      if (predefinedGuide == null) {
+        throw Exception('Predefined guide not found');
+      }
+
+      // Crear una nueva guía en la cuenta del usuario basada en la predefinida
+      final guideRef = await _firestore.collection('guides').add({
+        'title': '${predefinedGuide['title']} (Mi copia)',
+        'name': '${predefinedGuide['title']} (Mi copia)',
+        'description': predefinedGuide['description'],
+        'city': predefinedGuide['city'],
+        'destination': predefinedGuide['destination'],
+        'startDate': Timestamp.fromDate(
+            DateTime.now().add(const Duration(days: 7))), // Fecha por defecto
+        'endDate': Timestamp.fromDate(
+            DateTime.now().add(const Duration(days: 10))), // 3 días por defecto
+        'travelers': 1, // Valor por defecto
+        'travelModes': ['cultura', 'fiesta'], // Valores por defecto
+        'userRef': _firestore.collection('users').doc(userId),
+        'userId': userId,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'status': 'draft',
+        'views': 0,
+        'isPublic': false, // Las copias son privadas por defecto
+        'copiedFrom': predefinedGuideId, // Trackear origen
+        'totalActivities': 0, // Se llenarán cuando se copien las actividades
+      });
+
+      // Copiar los días y actividades de la guía predefinida
+      await _copyPredefinedGuideDays(guideRef.id, predefinedGuide);
+
+      // Actualizar estadísticas del usuario
+      await updateUserGuideStats(userId);
+
+      return guideRef.id;
+    } catch (e) {
+      print('Error copying predefined guide: $e');
+      return null;
+    }
+  }
+
+  // Helper para copiar los días de una guía predefinida
+  static Future<void> _copyPredefinedGuideDays(
+      String guideId, Map<String, dynamic> predefinedGuide) async {
+    try {
+      final days = predefinedGuide['days'] as List<dynamic>? ?? [];
+
+      for (int i = 0; i < days.length; i++) {
+        final day = days[i] as Map<String, dynamic>;
+        final dayActivities = day['activities'] as List<dynamic>? ?? [];
+
+        List<Map<String, dynamic>> convertedActivities = [];
+
+        for (int j = 0; j < dayActivities.length; j++) {
+          final activity = dayActivities[j] as Map<String, dynamic>;
+          convertedActivities.add({
+            'id': activity['id'] ?? 'activity_${i}_$j',
+            'name':
+                activity['title'] ?? activity['name'] ?? 'Actividad sin nombre',
+            'description': activity['description'] ?? '',
+            'imageUrl': activity['images']?[0] ?? '',
+            'rating': 4.5, // Valor por defecto
+            'reviews': 100, // Valor por defecto
+            'category': activity['category'] ?? 'sightseeing',
+            'price': 0.0, // Valor por defecto
+            'duration': activity['duration'] ?? 120,
+            'tags': [],
+            'order': j,
+          });
+        }
+
+        await _firestore
+            .collection('guides')
+            .doc(guideId)
+            .collection('days')
+            .doc((i + 1).toString())
+            .set({
+          'date': Timestamp.fromDate(DateTime.now().add(Duration(days: i))),
+          'dayNumber': i + 1,
+          'activities': convertedActivities,
+          'totalDuration': convertedActivities.fold<int>(
+            0,
+            (sum, activity) => sum + (activity['duration'] as int? ?? 0),
+          ),
+          'totalPrice': convertedActivities.fold<double>(
+            0.0,
+            (sum, activity) => sum + (activity['price'] as double? ?? 0.0),
+          ),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Actualizar el total de actividades en la guía principal
+      int totalActivities = days.fold<int>(0, (sum, day) {
+        final activities = day['activities'] as List<dynamic>? ?? [];
+        return sum + activities.length;
+      });
+
+      await _firestore.collection('guides').doc(guideId).update({
+        'totalActivities': totalActivities,
+      });
+    } catch (e) {
+      print('Error copying predefined guide days: $e');
     }
   }
 }

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:tourify_flutter/screens/discover_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class CreateGuideModal extends StatefulWidget {
   const CreateGuideModal({super.key});
@@ -1015,6 +1016,33 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                 ),
                 child: ElevatedButton.icon(
                   onPressed: () {
+                    final user = FirebaseAuth.instance.currentUser;
+                    if (user == null) {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: Text('Inicia sesión o regístrate'),
+                          content: Text(
+                              'Debes iniciar sesión o registrarte para crear una guía.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                              },
+                              child: Text('Cancelar'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                Navigator.of(context).pushNamed('/login');
+                              },
+                              child: Text('Iniciar sesión'),
+                            ),
+                          ],
+                        ),
+                      );
+                      return;
+                    }
                     if (!_validateForm()) return;
 
                     // Navegar al discover para crear guía privada

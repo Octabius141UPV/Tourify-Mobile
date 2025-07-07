@@ -548,11 +548,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: _buildStyledButton(
+                                      child: TextButton.icon(
                                         onPressed: () {
                                           setState(() {
                                             _isEditing = false;
-                                            // Restaurar valores originales
                                             _formData['name'] =
                                                 userData['name'];
                                             _formData['username'] =
@@ -561,20 +560,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                 userData['location'];
                                           });
                                         },
-                                        icon: Icons.cancel,
-                                        label: 'Cancelar',
-                                        isSecondary: true,
+                                        icon: const Icon(Icons.cancel,
+                                            color: Colors.grey),
+                                        label: const Text('Cancelar',
+                                            style:
+                                                TextStyle(color: Colors.grey)),
                                       ),
                                     ),
                                     const SizedBox(width: 16),
                                     Expanded(
-                                      child: _buildStyledButton(
+                                      child: ElevatedButton.icon(
                                         onPressed: _isLoading
                                             ? null
-                                            : () => _handleSave(user, userData),
-                                        icon: Icons.save,
-                                        label: 'Guardar',
-                                        isSecondary: false,
+                                            : () {
+                                                final user = FirebaseAuth
+                                                    .instance.currentUser;
+                                                if (user == null) {
+                                                  showDialog(
+                                                    context: context,
+                                                    builder: (context) =>
+                                                        AlertDialog(
+                                                      title: Text(
+                                                          'Inicia sesión o regístrate'),
+                                                      content: Text(
+                                                          'Debes iniciar sesión o registrarte para guardar cambios en tu perfil.'),
+                                                      actions: [
+                                                        TextButton(
+                                                          onPressed: () {
+                                                            Navigator.of(
+                                                                    context)
+                                                                .pop();
+                                                          },
+                                                          child:
+                                                              Text('Cancelar'),
+                                                        ),
+                                                        TextButton(
+                                                          onPressed: () {
+                                                            Navigator.of(
+                                                                    context)
+                                                                .pop();
+                                                            Navigator.of(
+                                                                    context)
+                                                                .pushNamed(
+                                                                    '/login');
+                                                          },
+                                                          child: Text(
+                                                              'Iniciar sesión'),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                  return;
+                                                }
+                                                _handleSave(user, userData);
+                                              },
+                                        icon: const Icon(Icons.save),
+                                        label: const Text('Guardar'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.blue,
+                                          foregroundColor: Colors.white,
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -585,30 +635,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ] else ...[
                           SizedBox(
                             width: double.infinity,
-                            child: _buildStyledButton(
+                            child: ElevatedButton.icon(
                               onPressed: () {
                                 setState(() {
                                   _isEditing = true;
                                 });
                               },
-                              icon: Icons.edit,
-                              label: 'Editar perfil',
-                              isSecondary: false,
+                              icon: const Icon(Icons.edit),
+                              label: const Text('Editar perfil'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
-                            child: _buildStyledButton(
+                            child: OutlinedButton.icon(
                               onPressed: _handleLogout,
-                              icon: Icons.logout,
-                              label: 'Cerrar sesión',
-                              isSecondary: true,
-                              isDangerous: true,
+                              icon: const Icon(Icons.logout, color: Colors.red),
+                              label: const Text('Cerrar sesión',
+                                  style: TextStyle(color: Colors.red)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.red),
+                                foregroundColor: Colors.red,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
                             ),
                           ),
                         ],
                       ],
+                    ),
+                  ),
+                  // Botón eliminar cuenta minimalista
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 8),
+                    child: Center(
+                      child: TextButton(
+                        onPressed: _handleDeleteAccount,
+                        child: const Text(
+                          'Eliminar cuenta',
+                          style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              decoration: TextDecoration.underline),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(
@@ -634,111 +714,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               break;
           }
         },
-      ),
-    );
-  }
-
-  // Método para crear botones con el mismo estilo que guide_detail_screen.dart
-  Widget _buildStyledButton({
-    required VoidCallback? onPressed,
-    required IconData icon,
-    required String label,
-    required bool isSecondary,
-    bool isDangerous = false,
-  }) {
-    final LinearGradient gradient;
-    final Color shadowColor;
-    final Color iconColor;
-    final Color textColor;
-
-    if (isDangerous) {
-      gradient = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color(0xFFE57373), // Rojo claro
-          Color(0xFFD32F2F), // Rojo oscuro
-        ],
-      );
-      shadowColor = Colors.red;
-      iconColor = Colors.white;
-      textColor = Colors.white;
-    } else if (isSecondary) {
-      gradient = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color(0xFFE0E0E0), // Gris claro
-          Color(0xFFBDBDBD), // Gris más oscuro
-        ],
-      );
-      shadowColor = Colors.grey;
-      iconColor = Colors.black87;
-      textColor = Colors.black87;
-    } else {
-      gradient = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color(0xFF2196F3), // Azul claro
-          Color(0xFF0D47A1), // Azul profundo
-        ],
-      );
-      shadowColor = Colors.blue;
-      iconColor = Colors.white;
-      textColor = Colors.white;
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: onPressed != null ? gradient : null,
-        color: onPressed == null ? Colors.grey[300] : null,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: onPressed != null
-            ? [
-                BoxShadow(
-                  color: shadowColor.withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                ),
-                BoxShadow(
-                  color: shadowColor.withOpacity(0.1),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onPressed,
-          splashColor: Colors.white.withOpacity(0.3),
-          highlightColor: Colors.white.withOpacity(0.1),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  color: onPressed != null ? iconColor : Colors.grey,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: onPressed != null ? textColor : Colors.grey,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -849,6 +824,291 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const LoginScreen(),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  Future<void> _handleDeleteAccount() async {
+    // Implementa la lógica para eliminar la cuenta del usuario
+    // Esto puede incluir la eliminación de datos del servidor y la autenticación
+    // Aquí puedes mostrar un diálogo de confirmación antes de proceder
+    final bool? shouldDelete = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, // No permitir cerrar tocando fuera
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.delete_forever,
+                color: Colors.red,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Eliminar cuenta permanentemente',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '⚠️ Esta acción es irreversible',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Se eliminarán permanentemente:',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('• Tu perfil y datos personales'),
+                  Text('• Todas tus guías de viaje'),
+                  Text('• Historial de actividades'),
+                  Text('• Preferencias y configuración'),
+                  Text('• Colaboraciones con otros usuarios'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'No podrás recuperar estos datos después de la eliminación.',
+              style: TextStyle(
+                fontSize: 14,
+                fontStyle: FontStyle.italic,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Sí, eliminar mi cuenta',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete == true) {
+      try {
+        // Mostrar indicador de carga
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 16),
+                Text('Eliminando cuenta...'),
+              ],
+            ),
+            duration: Duration(seconds: 3),
+          ),
+        );
+
+        await AuthService.deleteAccount();
+
+        // Ocultar el snackbar de carga
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        // Mostrar mensaje de éxito
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Cuenta eliminada correctamente'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Esperar un momento para mostrar el mensaje de éxito
+        await Future.delayed(const Duration(seconds: 2));
+
+        // Navegar a la pantalla de login directamente y limpiar el historial
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        // Ocultar el snackbar de carga
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error al eliminar cuenta: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Método para crear botones con el mismo estilo que guide_detail_screen.dart
+  Widget _buildStyledButton({
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String label,
+    required bool isSecondary,
+    bool isDangerous = false,
+  }) {
+    final LinearGradient gradient;
+    final Color shadowColor;
+    final Color iconColor;
+    final Color textColor;
+
+    if (isDangerous) {
+      gradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFE57373), // Rojo claro
+          Color(0xFFD32F2F), // Rojo oscuro
+        ],
+      );
+      shadowColor = Colors.red;
+      iconColor = Colors.white;
+      textColor = Colors.white;
+    } else if (isSecondary) {
+      gradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFE0E0E0), // Gris claro
+          Color(0xFFBDBDBD), // Gris más oscuro
+        ],
+      );
+      shadowColor = Colors.grey;
+      iconColor = Colors.black87;
+      textColor = Colors.black87;
+    } else {
+      gradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFF2196F3), // Azul claro
+          Color(0xFF0D47A1), // Azul profundo
+        ],
+      );
+      shadowColor = Colors.blue;
+      iconColor = Colors.white;
+      textColor = Colors.white;
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: onPressed != null ? gradient : null,
+        color: onPressed == null ? Colors.grey[300] : null,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: onPressed != null
+            ? [
+                BoxShadow(
+                  color: shadowColor.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: shadowColor.withOpacity(0.1),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onPressed,
+          splashColor: Colors.white.withOpacity(0.3),
+          highlightColor: Colors.white.withOpacity(0.1),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  color: onPressed != null ? iconColor : Colors.grey,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: onPressed != null ? textColor : Colors.grey,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

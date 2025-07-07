@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tourify_flutter/data/activity.dart';
 import 'dart:ui' show lerpDouble;
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class OrganizeActivitiesScreen extends StatefulWidget {
   final List<DayActivities> dayActivities;
@@ -239,7 +240,36 @@ class _OrganizeActivitiesScreenState extends State<OrganizeActivitiesScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: _saveChanges,
+            onPressed: () {
+              final user = FirebaseAuth.instance.currentUser;
+              if (user == null) {
+                showDialog(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: Text('Inicia sesión o regístrate'),
+                    content: Text(
+                        'Debes iniciar sesión o registrarte para guardar cambios en la organización de actividades.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                        },
+                        child: Text('Cancelar'),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).pushNamed('/login');
+                        },
+                        child: Text('Iniciar sesión'),
+                      ),
+                    ],
+                  ),
+                );
+                return;
+              }
+              _saveChanges();
+            },
             child: const Text(
               'Guardar',
               style: TextStyle(

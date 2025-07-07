@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:io' show Platform;
 
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -114,10 +116,80 @@ class AuthService {
     }
   }
 
-  // Sign out (updated to handle Google Sign In)
+  // Sign in with Apple
+  static Future<UserCredential?> signInWithApple() async {
+    try {
+      // Check if Apple Sign In is available
+      if (!Platform.isIOS) {
+        print('Apple Sign In is only available on iOS');
+        return null;
+      }
+
+      // Check if Apple Sign In is available on this device
+      final bool isAvailable = await SignInWithApple.isAvailable();
+      if (!isAvailable) {
+        print('Apple Sign In is not available on this device');
+        return null;
+      }
+
+      // Request credential for the currently signed in Apple ID
+      final AuthorizationCredentialAppleID appleCredential =
+          await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      // Create an `OAuthCredential` from the credential returned by Apple
+      final oauthCredential = OAuthProvider("apple.com").credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      // Sign in the user with Firebase
+      final userCredential = await _auth.signInWithCredential(oauthCredential);
+
+      // Update the user's display name if it's not set and we have it from Apple
+      if (userCredential.user != null &&
+          userCredential.user!.displayName == null) {
+        final String displayName = _buildDisplayNameFromApple(appleCredential);
+        if (displayName.isNotEmpty) {
+          await userCredential.user!.updateDisplayName(displayName);
+        }
+      }
+
+      // Create or update user document
+      if (userCredential.user != null) {
+        await _createUserDocument(userCredential.user!);
+      }
+
+      return userCredential;
+    } catch (e) {
+      print('Error signing in with Apple: $e');
+      return null;
+    }
+  }
+
+  // Helper method to build display name from Apple ID credential
+  static String _buildDisplayNameFromApple(
+      AuthorizationCredentialAppleID credential) {
+    if (credential.givenName != null && credential.familyName != null) {
+      return '${credential.givenName} ${credential.familyName}';
+    } else if (credential.givenName != null) {
+      return credential.givenName!;
+    } else if (credential.familyName != null) {
+      return credential.familyName!;
+    }
+    return '';
+  }
+
+  // Sign out (handles Google Sign In and Apple Sign In)
   static Future<void> signOut() async {
     try {
       await _googleSignIn.signOut();
+      // Note: Apple Sign In doesn't require explicit sign out
+      // as it's handled automatically by Firebase Auth
       await _auth.signOut();
     } catch (e) {
       print('Error signing out: $e');
@@ -298,9 +370,86 @@ class AuthService {
     try {
       await clearRememberedCredentials();
       await _googleSignIn.signOut();
+      // Note: Apple Sign In doesn't require explicit sign out
+      // as it's handled automatically by Firebase Auth
       await _auth.signOut();
     } catch (e) {
       print('Error signing out and clearing remember me: $e');
+    }
+  }
+
+  // Delete user account completely
+  static Future<bool> deleteAccount() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('No user is currently signed in');
+      }
+
+      final String userId = user.uid;
+
+      // 1. Eliminar todos los datos del usuario en Firestore
+      await _deleteAllUserData(userId);
+
+      // 2. Eliminar la cuenta de Firebase Auth
+      await user.delete();
+
+      // 3. Limpiar credenciales locales
+      await clearRememberedCredentials();
+
+      // 4. Cerrar sesión de proveedores OAuth
+      await _googleSignIn.signOut();
+
+      return true;
+    } catch (e) {
+      print('Error deleting account: $e');
+      return false;
+    }
+  }
+
+  // Helper method para eliminar todos los datos del usuario
+  static Future<void> _deleteAllUserData(String userId) async {
+    try {
+      final batch = _firestore.batch();
+
+      // Eliminar documento del usuario
+      final userDoc = _firestore.collection('users').doc(userId);
+      batch.delete(userDoc);
+
+      // Eliminar todas las guías del usuario
+      final guidesSnapshot = await _firestore
+          .collection('guides')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      for (final guideDoc in guidesSnapshot.docs) {
+        // Eliminar subcolección de días de cada guía
+        final daysSnapshot = await guideDoc.reference.collection('days').get();
+        for (final dayDoc in daysSnapshot.docs) {
+          batch.delete(dayDoc.reference);
+        }
+
+        // Eliminar la guía
+        batch.delete(guideDoc.reference);
+      }
+
+      // Eliminar interacciones del usuario
+      final interactionsSnapshot = await _firestore
+          .collection('user_interactions')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      for (final interactionDoc in interactionsSnapshot.docs) {
+        batch.delete(interactionDoc.reference);
+      }
+
+      // Ejecutar todas las eliminaciones
+      await batch.commit();
+
+      print('✅ Todos los datos del usuario eliminados correctamente');
+    } catch (e) {
+      print('❌ Error eliminando datos del usuario: $e');
+      throw e;
     }
   }
 }

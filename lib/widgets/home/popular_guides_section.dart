@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:tourify_flutter/widgets/home/popular_guide_card.dart';
+import 'package:tourify_flutter/services/guide_service.dart';
+import 'package:tourify_flutter/services/navigation_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class PopularGuidesSection extends StatelessWidget {
   final List<Map<String, dynamic>> guides;
@@ -18,11 +21,19 @@ class PopularGuidesSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Guías populares',
+          'Guías diseñadas por expertos',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
             color: Color(0xFF1F2937),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Copia cualquiera a tu cuenta personal',
+          style: TextStyle(
+            fontSize: 14,
+            color: Color(0xFF6B7280),
           ),
         ),
         const SizedBox(height: 12),
@@ -46,7 +57,7 @@ class PopularGuidesSection extends StatelessWidget {
                   )
                 : Container(
                     constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.4,
+                      maxHeight: MediaQuery.of(context).size.height * 0.6,
                     ),
                     child: GridView.builder(
                       shrinkWrap: true,
@@ -54,13 +65,14 @@ class PopularGuidesSection extends StatelessWidget {
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
-                        childAspectRatio: 1.1,
+                        childAspectRatio: 0.95,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
                       ),
                       itemCount: guides.length,
                       itemBuilder: (context, index) {
                         final guide = guides[index];
+                        final isPredefined = guide['isPredefined'] == true;
 
                         // Calcular días
                         String duration = 'Duración no especificada';
@@ -107,6 +119,7 @@ class PopularGuidesSection extends StatelessWidget {
                           activities: activities,
                           imageUrl: guide['imageUrl'],
                           city: guide['city'] ?? guide['destination'],
+                          isPredefined: isPredefined,
                           onTap: () {
                             Navigator.pushNamed(
                               context,
@@ -118,6 +131,9 @@ class PopularGuidesSection extends StatelessWidget {
                               },
                             );
                           },
+                          onCopyTap: isPredefined
+                              ? () => _copyGuide(context, guide['id'])
+                              : null,
                         );
                       },
                     ),
@@ -152,5 +168,100 @@ class PopularGuidesSection extends StatelessWidget {
         );
       },
     );
+  }
+
+  void _copyGuide(BuildContext context, String guideId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Inicia sesión o regístrate'),
+          content:
+              Text('Debes iniciar sesión o registrarte para usar esta guía.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pushNamed('/login');
+              },
+              child: Text('Iniciar sesión'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    try {
+      // Mostrar loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Copiar la guía
+      final copiedGuideId = await GuideService.copyPredefinedGuide(guideId);
+
+      // Cerrar loading
+      if (context.mounted) {
+        Navigator.of(context).pop();
+      }
+
+      if (copiedGuideId != null) {
+        // Mostrar éxito y navegar a la guía copiada
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Guía copiada a tu cuenta'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          // Navegar a la guía copiada
+          Navigator.pushNamed(
+            context,
+            '/guide-detail',
+            arguments: {
+              'guideId': copiedGuideId,
+              'guideTitle': 'Tu guía personalizada',
+            },
+          );
+        }
+      } else {
+        // Mostrar error
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Error al copiar la guía'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Cerrar loading si está abierto
+      if (context.mounted) {
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 }

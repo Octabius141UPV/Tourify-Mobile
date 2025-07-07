@@ -6,7 +6,7 @@ import 'package:tourify_flutter/screens/verify_email_screen.dart';
 import 'package:tourify_flutter/services/auth_service.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:io';
+import 'dart:io' show Platform;
 import '../config/app_colors.dart';
 import '../utils/safe_area_helper.dart';
 
@@ -221,6 +221,42 @@ class _LoginScreenState extends State<LoginScreen> {
       print('Error en login con Google: $e');
       setState(() {
         _error = 'Error al iniciar sesión con Google.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleAppleLogin() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final userCredential = await AuthService.signInWithApple();
+
+      if (mounted && userCredential?.user != null) {
+        print('Login con Apple exitoso: ${userCredential?.user?.email}');
+        Navigator.pushAndRemoveUntil(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                const HomeScreen(),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      print('Error en login con Apple: $e');
+      setState(() {
+        _error = 'Error al iniciar sesión con Apple.';
       });
     } finally {
       if (mounted) {
@@ -681,7 +717,39 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 16),
+                        if (Platform.isIOS) ...[
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _isLoading ? null : _handleAppleLogin,
+                              icon: const Icon(
+                                Icons.apple,
+                                size: 24,
+                                color: Colors.white,
+                              ),
+                              label: const Text(
+                                'Continuar con Apple',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 0,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                        ],
                         if (_isBiometricAvailable) ...[
                           FutureBuilder<bool>(
                             future: AuthService.hasStoredCredentials(),

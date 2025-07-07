@@ -193,7 +193,7 @@ class _MyAppState extends State<MyApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('es', 'ES')],
-      home: const AuthChecker(),
+      home: const HomeScreen(),
       onGenerateRoute: (settings) {
         // Configurar rutas con transiciones personalizadas
         Widget page;
@@ -226,7 +226,7 @@ class _MyAppState extends State<MyApp> {
             page = GuideDetailScreen(guideId: guideId, guideTitle: guideTitle);
             break;
           default:
-            page = const AuthChecker();
+            page = const HomeScreen();
         }
 
         return PageRouteBuilder(
@@ -236,75 +236,6 @@ class _MyAppState extends State<MyApp> {
           reverseTransitionDuration: Duration.zero,
         );
       },
-    );
-  }
-}
-
-// Widget para verificar autenticación
-class AuthChecker extends StatefulWidget {
-  const AuthChecker({super.key});
-
-  @override
-  State<AuthChecker> createState() => _AuthCheckerState();
-}
-
-class _AuthCheckerState extends State<AuthChecker> {
-  @override
-  void initState() {
-    super.initState();
-    _checkAuthStatus();
-  }
-
-  Future<void> _checkAuthStatus() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      final shouldRemember = await AuthService.shouldRememberUser();
-
-      // Si hay un deep link pendiente, dar más tiempo para que se procese
-      if (_MyAppState.hasPendingDeepLink) {
-        print(
-            'Deep link pendiente detectado, esperando antes de verificar auth...');
-        await Future.delayed(const Duration(seconds: 2));
-      }
-
-      if (mounted) {
-        if (user != null && shouldRemember) {
-          // Usuario logueado y quiere recordar sesión
-          Navigator.pushReplacementNamed(context, '/home');
-        } else if (user != null && !_MyAppState.hasPendingDeepLink) {
-          // Hay usuario pero no quiere recordar sesión Y no hay deep link pendiente
-          if (!shouldRemember) {
-            // Cerrar sesión si no quiere recordar
-            await AuthService.signOut();
-          }
-          Navigator.pushReplacementNamed(context, '/login');
-        } else if (user == null && !_MyAppState.hasPendingDeepLink) {
-          // No hay usuario y no hay deep link pendiente
-          Navigator.pushReplacementNamed(context, '/login');
-        } else {
-          // Hay deep link pendiente, esperar un poco más
-          if (_MyAppState.hasPendingDeepLink) {
-            await Future.delayed(const Duration(seconds: 1));
-            if (mounted) {
-              _checkAuthStatus(); // Reintentar
-            }
-          }
-        }
-      }
-    } catch (e) {
-      print('Error verificando estado de autenticación: $e');
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/login');
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Widget transparente para que se vea el native splash
-    return const Scaffold(
-      backgroundColor: Colors.transparent,
-      body: SizedBox.shrink(),
     );
   }
 }

@@ -1256,6 +1256,33 @@ class _EditGuideDialogState extends State<_EditGuideDialog> {
   }
 
   Future<void> _handleSave() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Inicia sesión o regístrate'),
+          content: Text(
+              'Debes iniciar sesión o registrarte para guardar cambios en la guía.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).pushNamed('/login');
+              },
+              child: Text('Iniciar sesión'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     if (_nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1265,18 +1292,15 @@ class _EditGuideDialogState extends State<_EditGuideDialog> {
       );
       return;
     }
-
     setState(() {
       _isLoading = true;
     });
-
     try {
       await widget.onUpdate(
         widget.guide,
         _nameController.text.trim(),
         _descriptionController.text.trim(),
       );
-
       if (mounted) {
         Navigator.pop(context);
       }

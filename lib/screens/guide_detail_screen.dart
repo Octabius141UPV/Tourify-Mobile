@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/collaborators_modal.dart';
 import '../widgets/edit_activity_dialog.dart';
 import '../widgets/add_activity_dialog.dart';
-import '../widgets/civitatis_logo.dart';
+
 import '../widgets/organize_activities_modal.dart';
 import '../utils/activity_utils.dart';
 import 'dart:convert';
@@ -29,6 +29,9 @@ import '../widgets/map/activity_marker_utils.dart';
 import '../config/app_colors.dart';
 import 'dart:async';
 import 'dart:math';
+
+import '../widgets/travel_agent_chat_widget.dart';
+import '../widgets/premium_feature_modal.dart';
 
 class GuideDetailScreen extends StatefulWidget {
   final String guideId;
@@ -929,7 +932,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       }
 
       // Llamada al backend para generar PDF (versión directa sin Puppeteer)
-      final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:3000';
+      final baseUrl = dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000';
       final response = await http.post(
         Uri.parse('$baseUrl/guides/${widget.guideId}/export-pdf-direct'),
         headers: {
@@ -1654,7 +1657,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                             opacity: _isMenuExpanded ? 1.0 : 0.0,
                             duration: const Duration(milliseconds: 600),
                             child: Tooltip(
-                              message: 'Agente de viaje IA',
+                              message: 'Agente de viaje',
                               child: _buildCircularButton(
                                 onTap: _openTravelAgent,
                                 size: 46,
@@ -1667,8 +1670,14 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                                   ],
                                 ),
                                 shadowColor: Colors.blue,
-                                icon: Icons.smart_toy,
-                                iconSize: 24,
+                                customChild: ClipOval(
+                                  child: Image.asset(
+                                    'assets/images/agent_avatar.png',
+                                    width: 32,
+                                    height: 32,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1785,8 +1794,9 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     required double size,
     required LinearGradient gradient,
     required Color shadowColor,
-    required IconData icon,
-    required double iconSize,
+    IconData? icon,
+    double? iconSize,
+    Widget? customChild,
   }) {
     return Container(
       width: size,
@@ -1817,12 +1827,15 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
           child: Center(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
-              child: Icon(
-                icon,
-                color: Colors.white,
-                size: iconSize,
-                key: ValueKey(icon),
-              ),
+              child: customChild ??
+                  (icon != null
+                      ? Icon(
+                          icon,
+                          color: Colors.white,
+                          size: iconSize,
+                          key: ValueKey(icon),
+                        )
+                      : const SizedBox()),
             ),
           ),
         ),
@@ -2051,423 +2064,38 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   }
 
   void _openTravelAgent() {
-    _startTravelAgentChat();
-  }
-
-  void _startTravelAgentChat() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => TravelAgentChatWidget(
+          guideId: widget.guideId,
+          guideTitle: widget.guideTitle,
         ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0062FF), Color(0xFF0046CC)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.workspace_premium,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Tourify Premium',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0062FF),
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0062FF), Color(0xFF0046CC)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Column(
-                children: [
-                  Text(
-                    '5€',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    'al mes',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Desbloquea funciones premium:',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF0062FF),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildPremiumFeature(
-              Icons.smart_toy,
-              'Asistente de viaje',
-              'Ayuda instantánea durante tu viaje',
-            ),
-            const SizedBox(height: 8),
-            _buildPremiumFeature(
-              Icons.cloud_off,
-              'Uso sin conexión',
-              'Accede a tus guías sin internet',
-            ),
-            const SizedBox(height: 8),
-            _buildPremiumFeature(
-              Icons.map,
-              'Exportación a Google Maps',
-              'Exporta tu itinerario directamente a Maps',
-            ),
-            const SizedBox(height: 8),
-            _buildPremiumFeature(
-              Icons.calendar_today,
-              'Exportación a Google Calendar',
-              'Sincroniza tus actividades con tu calendario',
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Más tarde',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _showComingSoonModal();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFD700),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(25),
-              ),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.workspace_premium, size: 20),
-                SizedBox(width: 8),
-                Text(
-                  'Suscribirse',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
+  }
+
+  // Funciones para Google Maps y Calendar (restauradas)
+  void _exportToGoogleMaps(Map<String, dynamic> activity) {
+    _showComingSoonModal();
+  }
+
+  void _addToGoogleCalendar(Map<String, dynamic> activity) {
+    _showComingSoonModal();
+  }
+
+  void _exportAllToGoogleMaps() {
+    _showComingSoonModal();
+  }
+
+  void _exportAllToGoogleCalendar() {
+    _showComingSoonModal();
   }
 
   void _showComingSoonModal() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0062FF), Color(0xFF0046CC)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.rocket_launch,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Próximamente',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF0062FF),
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFFD700), Color(0xFFFFA000)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Column(
-                children: [
-                  Text(
-                    '🎉 PRIMER MES',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    'GRATIS',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Estamos trabajando en funciones increíbles para Tourify Premium:',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF0062FF),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildPremiumFeature(
-              Icons.smart_toy,
-              'Asistente de viaje con IA',
-              'Ayuda instantánea durante tu viaje',
-            ),
-            const SizedBox(height: 8),
-            _buildPremiumFeature(
-              Icons.cloud_off,
-              'Uso sin conexión',
-              'Accede a tus guías sin internet',
-            ),
-            const SizedBox(height: 8),
-            _buildPremiumFeature(
-              Icons.map,
-              'Exportación a Google Maps',
-              'Exporta tu itinerario directamente a Maps',
-            ),
-            const SizedBox(height: 8),
-            _buildPremiumFeature(
-              Icons.calendar_today,
-              'Sincronización con calendario',
-              'Conecta tus viajes con tu agenda',
-            ),
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Colors.blue.withOpacity(0.3),
-                ),
-              ),
-              child: const Text(
-                '¡Te notificaremos cuando esté disponible y tendrás tu primer mes completamente gratis!',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF0062FF),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Entendido',
-              style: TextStyle(
-                color: Color(0xFF0062FF),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
+      builder: (context) => const PremiumFeatureModal(),
     );
-  }
-
-  Widget _buildPremiumFeature(IconData icon, String title, String description) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0062FF).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Icon(
-            icon,
-            color: const Color(0xFF0062FF),
-            size: 16,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-              Text(
-                description,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _processPremiumSubscription() {
-    // TODO: Implementar lógica de suscripción premium
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: const Icon(
-                Icons.workspace_premium,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Redirigiendo al proceso de suscripción...',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFFFFD700),
-        duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-        margin: const EdgeInsets.all(16),
-      ),
-    );
-  }
-
-  // Funciones fake para Google Maps y Calendar
-  void _exportToGoogleMaps(Map<String, dynamic> activity) async {
-    try {
-      // Encontrar el día al que pertenece esta actividad
-      dynamic targetDay = _guide!['days'].firstWhere((day) =>
-          (day['activities'] as List)
-              .any((a) => (a as Map<String, dynamic>)['id'] == activity['id']));
-
-      final dayNumber =
-          targetDay?['dayNumber'] ?? 1; // Obtener el número de día correcto
-
-      // Asegurar que la actividad tenga el día correcto
-      final activityWithDay = Map<String, dynamic>.from(activity);
-      activityWithDay['day'] = dayNumber; // Forzar el día correcto
-
-      final activityObj =
-          Activity.fromMap(activityWithDay, activity['id'].toString());
-
-      // Navegar a la pantalla del mapa con esta actividad específica
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => GuideMapScreen(
-            guideTitle: widget.guideTitle,
-            city: _guide?['city'] ?? '',
-            activities: [activityObj], // Solo mostrar esta actividad
-          ),
-        ),
-      );
-    } catch (e) {
-      print('Error al abrir el mapa: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error al abrir el mapa: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  void _addToGoogleCalendar(Map<String, dynamic> activity) {
-    _startTravelAgentChat();
-  }
-
-  void _exportAllToGoogleMaps() async {
-    _startTravelAgentChat();
-  }
-
-  void _exportAllToGoogleCalendar() {
-    _startTravelAgentChat();
   }
 
   void _openGuideMap() async {
