@@ -2933,7 +2933,10 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       // Actualizar cada día en Firestore manteniendo la estructura original
       for (final day in _guide!['days']) {
         final dayNumber = day['dayNumber'] as int;
-        final dayActivities = day['activities'] as List<Map<String, dynamic>>;
+        final dayActivitiesList = day['activities'] as List;
+        final dayActivities = dayActivitiesList
+            .map((activity) => activity as Map<String, dynamic>)
+            .toList();
 
         final success = await _updateDayActivities(dayNumber, dayActivities);
 
