@@ -51,7 +51,23 @@ class Activity {
     }
     // NO crear imágenes por defecto aquí - esto causaba el problema de cambio de imágenes
     LatLng? location;
-    if (data['location'] != null && data['location'] is Map) {
+
+    // PRIORIDAD 1: Buscar en 'coordinates' (nuevo formato)
+    if (data['coordinates'] != null && data['coordinates'] is Map) {
+      final coords = data['coordinates'];
+      if (coords['latitude'] != null && coords['longitude'] != null) {
+        final lat = coords['latitude'];
+        final lng = coords['longitude'];
+        if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+          location = LatLng((lat as num).toDouble(), (lng as num).toDouble());
+        }
+      }
+    }
+
+    // PRIORIDAD 2: Buscar en 'location' (formato antiguo, compatibilidad)
+    if (location == null &&
+        data['location'] != null &&
+        data['location'] is Map) {
       final loc = data['location'];
       if (loc['lat'] != null && loc['lng'] != null) {
         location = LatLng(
@@ -113,6 +129,11 @@ class Activity {
       'startTime': startTime,
       'endTime': endTime,
       'price': price,
+      // Coordenadas en formato nuevo (preferido)
+      'coordinates': location != null
+          ? {'latitude': location!.latitude, 'longitude': location!.longitude}
+          : null,
+      // Coordenadas en formato antiguo (compatibilidad)
       'location': location != null
           ? {'lat': location!.latitude, 'lng': location!.longitude}
           : null,

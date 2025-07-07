@@ -1,37 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:tourify_flutter/data/activity.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../widgets/collaborators_modal.dart';
-import '../widgets/edit_activity_dialog.dart';
-import '../widgets/add_activity_dialog.dart';
-
-import '../widgets/organize_activities_modal.dart';
-import '../utils/activity_utils.dart';
+import 'dart:async';
+import 'dart:math';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/app_colors.dart';
+import '../data/activity.dart';
+import '../services/guide_service.dart';
+import '../services/map/geocoding_service.dart';
+import '../services/map/places_service.dart';
+import '../utils/activity_utils.dart';
+import '../widgets/map/activity_marker_utils.dart';
+import '../widgets/edit_activity_dialog.dart';
+import '../widgets/add_activity_dialog.dart';
+import '../widgets/collaborators_modal.dart';
+import '../widgets/organize_activities_modal.dart';
+import '../services/collaborators_service.dart';
+import '../services/public_guides_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:path_provider/path_provider.dart';
-import '../services/collaborators_service.dart';
-import '../services/guide_service.dart';
-import '../services/public_guides_service.dart';
 import 'collaborators_screen.dart';
 import 'premium_subscription_screen.dart';
 import 'guide_map_screen.dart';
-import 'dart:io';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../services/map/geocoding_service.dart';
-import '../services/map/places_service.dart';
-import '../widgets/map/activity_marker_utils.dart';
-import '../config/app_colors.dart';
-import 'dart:async';
-import 'dart:math';
-
 import '../widgets/travel_agent_chat_widget.dart';
 import '../widgets/premium_feature_modal.dart';
+
+// Clase para representar lugares cercanos obtenidos de Google Places API
+class NearbyPlace {
+  final String placeId;
+  final String name;
+  final double? rating;
+  final List<String> types;
+  final String? vicinity;
+  final int? priceLevel;
+
+  NearbyPlace({
+    required this.placeId,
+    required this.name,
+    this.rating,
+    required this.types,
+    this.vicinity,
+    this.priceLevel,
+  });
+}
 
 class GuideDetailScreen extends StatefulWidget {
   final String guideId;
@@ -174,6 +195,9 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
         _guide = guideData;
         _isLoading = false;
       });
+
+      // CRÍTICO: Cargar actividades desde la guía para el mapa (DESPUÉS del setState)
+      _rebuildActivitiesFromGuide();
 
       // Registrar vista si es una guía pública
       if (guideData['isPublic'] == true) {
@@ -2205,6 +2229,8 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   }
 
   Future<void> _createMarkersFromActivities() async {
+    print(
+        '🎯 _createMarkersFromActivities() LLAMADA - _allActivities.length: ${_allActivities.length}');
     final Set<Marker> markers = {};
     final city = _guide?['city'] ?? '';
     bool hasUpdatedActivities = false;
@@ -2243,13 +2269,22 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     // Map para contar cuántas actividades hay en cada localización
     Map<String, int> locationCount = {};
     Map<String, int> locationIndex = {};
+    int geocodingRequests = 0;
     for (final activity in orderedActivities) {
       LatLng? activityLocation = activity.location;
+
+      // ✅ OPTIMIZACIÓN: Solo geocodificar si no tiene coordenadas guardadas
       if (activityLocation == null) {
+        geocodingRequests++;
+        print(
+            '🔍 Geocodificando "${activity.title}" (no tiene coordenadas guardadas)');
         final nombreLimpio = limpiarNombreActividad(activity.title);
         final address = '$nombreLimpio, $city';
         activityLocation = await GeocodingService.getLatLngFromAddress(address);
+
         if (activityLocation != null) {
+          print(
+              '✅ Coordenadas obtenidas para "${activity.title}": $activityLocation');
           final updatedActivity = Activity(
             id: activity.id,
             title: activity.title,
@@ -2273,9 +2308,13 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
           if (idx != -1) _allActivities[idx] = updatedActivity;
           hasUpdatedActivities = true;
         } else {
+          print(
+              '❌ No se pudieron obtener coordenadas para "${activity.title}"');
           updatedActivities.add(activity);
         }
       } else {
+        // ✅ Actividad ya tiene coordenadas guardadas, no necesita geocodificación
+        print('✅ "${activity.title}" ya tiene coordenadas: $activityLocation');
         updatedActivities.add(activity);
       }
       if (activityLocation != null) {
@@ -2330,6 +2369,13 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     if (hasUpdatedActivities) {
       await _saveUpdatedActivitiesWithLocations(updatedActivities);
     }
+
+    // Resumen de optimización
+    print('🎯 Marcadores creados: ${markers.length}');
+    print('🔍 Peticiones de geocodificación realizadas: $geocodingRequests');
+    print(
+        '✅ Actividades con coordenadas reutilizadas: ${orderedActivities.length - geocodingRequests}');
+
     setState(() {
       _markers = markers;
     });
@@ -2376,6 +2422,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Título del lugar
                   Row(
                     children: [
                       const Icon(Icons.place, color: Colors.blue, size: 28),
@@ -2391,85 +2438,93 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  if (placeInfo != null && placeInfo.rating != null) ...[
-                    Row(
-                      children: [
-                        for (int i = 1; i <= 5; i++)
-                          Icon(
-                            i <= placeInfo.rating!.round()
-                                ? Icons.star
-                                : Icons.star_border,
-                            color: Colors.amber,
-                            size: 28,
-                          ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${placeInfo.rating!.toStringAsFixed(1)} / 5.0',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  if (placeInfo != null && placeInfo.review != null) ...[
-                    Text(
-                      _shortenReview(placeInfo.review!),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontStyle: FontStyle.italic,
-                        color: Colors.black87,
-                      ),
-                      maxLines: 10,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  if (placeInfo != null && placeInfo.address != null) ...[
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on,
-                            color: Colors.grey, size: 20),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            placeInfo.address!,
-                            style: const TextStyle(
-                                fontSize: 15, color: Colors.grey),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                  ],
-                  Row(
+                  const SizedBox(height: 20),
+
+                  // Solo 3 opciones principales
+                  Column(
                     children: [
-                      Expanded(child: Container()),
+                      // 1. Ver en Google Maps
                       if (placeInfo != null && placeInfo.address != null)
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.map, color: Colors.white),
-                          label: const Text('Ver en Google Maps'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.map),
+                            label: const Text('Ver en Google Maps'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () async {
+                              final query =
+                                  Uri.encodeComponent(placeInfo.address!);
+                              final url =
+                                  'https://www.google.com/maps/search/?api=1&query=$query';
+                              if (await canLaunchUrl(Uri.parse(url))) {
+                                await launchUrl(Uri.parse(url),
+                                    mode: LaunchMode.externalApplication);
+                              }
+                            },
+                          ),
+                        ),
+
+                      const SizedBox(height: 12),
+
+                      // 2. Editar actividad (solo si puede editar)
+                      if (_canEdit)
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Editar actividad'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              // Buscar la actividad en la estructura de la guía
+                              Map<String, dynamic>? activityData;
+                              for (final day in _guide!['days']) {
+                                final activities = day['activities'] as List;
+                                for (final act in activities) {
+                                  if (act['id'] == activity.id) {
+                                    activityData =
+                                        Map<String, dynamic>.from(act);
+                                    break;
+                                  }
+                                }
+                                if (activityData != null) break;
+                              }
+                              if (activityData != null) {
+                                _editActivity(activityData);
+                              }
+                            },
+                          ),
+                        ),
+
+                      if (_canEdit) const SizedBox(height: 12),
+
+                      // 3. Cerrar
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.close),
+                          label: const Text('Cerrar'),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          onPressed: () async {
-                            final query =
-                                Uri.encodeComponent(placeInfo.address!);
-                            final url =
-                                'https://www.google.com/maps/search/?api=1&query=$query';
-                            if (await canLaunchUrl(Uri.parse(url))) {
-                              await launchUrl(Uri.parse(url),
-                                  mode: LaunchMode.externalApplication);
-                            }
-                          },
+                          onPressed: () => Navigator.pop(context),
                         ),
+                      ),
                     ],
                   ),
                 ],
@@ -2537,7 +2592,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                     dayActivities[i] as Map<String, dynamic>;
                 if (existingActivity['id'] == activity.id) {
                   // Solo actualizar las coordenadas sin cambiar otros campos
-                  existingActivity['location'] = {
+                  existingActivity['coordinates'] = {
                     'latitude': activity.location!.latitude,
                     'longitude': activity.location!.longitude,
                   };
@@ -2641,6 +2696,26 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                         compassEnabled: true,
                         mapType: MapType.normal,
                         onMapCreated: _onMapCreated,
+                        onTap: (LatLng position) {
+                          print('🖱️ TAP en mapa: $position');
+                          _onMapTapped(position);
+                        },
+                        onCameraMove: (CameraPosition position) {
+                          print(
+                              '📹 CÁMARA MOVIDA: ${position.target}, zoom: ${position.zoom}');
+                        },
+                        // Configuración específica para iOS
+                        zoomGesturesEnabled: true,
+                        scrollGesturesEnabled: true,
+                        rotateGesturesEnabled: true,
+                        tiltGesturesEnabled: true,
+                        // Configurar gesture recognizers para mejorar la respuesta táctil
+                        gestureRecognizers: <Factory<
+                            OneSequenceGestureRecognizer>>{
+                          Factory<OneSequenceGestureRecognizer>(
+                            () => EagerGestureRecognizer(),
+                          ),
+                        },
                       )
                     : Container(color: Colors.grey[200]),
               ),
@@ -2687,7 +2762,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                 ),
               ),
             ),
-            // Hoja superpuesta con slider y contenido, justo debajo del mapa
+            // Hoja superpuesta con slider y contenido, sin bloquear gestos del mapa
             Positioned(
               top: mapHeight,
               left: 0,
@@ -2718,43 +2793,51 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.max,
                   children: [
-                    // Slider (handle) pegado arriba
-                    GestureDetector(
-                      onPanUpdate: (details) {
-                        setState(() {
-                          final min = 0.0;
-                          final max = 1.0;
-                          final newFraction =
-                              (_mapHeightFraction * totalHeight +
-                                      details.delta.dy) /
-                                  totalHeight;
-                          _mapHeightFraction = newFraction.clamp(min, max);
-                          if (_mapHeightFraction <= 0.01) {
-                            _closeMap();
-                            _mapHeightFraction = 0.4;
-                          }
-                        });
-                      },
-                      child: Container(
-                        height: 32,
-                        width: double.infinity,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFF5F5F5),
-                          borderRadius: BorderRadius.only(
-                            topLeft: Radius.circular(16),
-                            topRight: Radius.circular(16),
-                          ),
-                        ),
-                        child: Center(
-                          child: Container(
-                            width: 50,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade400,
-                              borderRadius: BorderRadius.circular(2),
+                    // Handle minimalista que NO intercepta gestos del mapa
+                    Container(
+                      height: 20,
+                      width: double.infinity,
+                      color: Colors.transparent,
+                      child: Stack(
+                        children: [
+                          // Área del handle - SOLO el centro es arrastrable
+                          Center(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onPanUpdate: (details) {
+                                setState(() {
+                                  final min = 0.0;
+                                  final max = 1.0;
+                                  final newFraction =
+                                      (_mapHeightFraction * totalHeight +
+                                              details.delta.dy) /
+                                          totalHeight;
+                                  _mapHeightFraction =
+                                      newFraction.clamp(min, max);
+                                  if (_mapHeightFraction <= 0.01) {
+                                    _closeMap();
+                                    _mapHeightFraction = 0.4;
+                                  }
+                                });
+                              },
+                              child: Container(
+                                width: 60, // Solo 60px de ancho para arrastrar
+                                height: 20,
+                                color: Colors.transparent,
+                                child: Center(
+                                  child: Container(
+                                    width: 50,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade400,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                     // Contenido de la guía
@@ -2935,5 +3018,660 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       return review.substring(0, 897) + '...';
     }
     return review;
+  }
+
+  // NUEVO: Al hacer tap en el mapa (no en un marcador), buscar lugares cercanos
+  void _onMapTapped(LatLng position) async {
+    print('🗺️ Tap en mapa en posición: $position');
+
+    // Buscar lugares cercanos en esta posición
+    final nearbyPlaces = await _searchNearbyPlaces(position);
+
+    if (nearbyPlaces.isNotEmpty) {
+      _showAddPlaceModal(position, nearbyPlaces);
+    } else {
+      // No se encontraron lugares, mostrar opción de añadir lugar personalizado
+      _showAddCustomPlaceModal(position);
+    }
+  }
+
+  // Buscar lugares cercanos usando Places API
+  Future<List<NearbyPlace>> _searchNearbyPlaces(LatLng position) async {
+    try {
+      final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'];
+      if (apiKey == null || apiKey.isEmpty) return [];
+
+      // Buscar lugares cercanos en un radio de 50 metros
+      final url = Uri.parse(
+          'https://maps.googleapis.com/maps/api/place/nearbysearch/json?'
+          'location=${position.latitude},${position.longitude}&'
+          'radius=50&'
+          'type=point_of_interest|restaurant|tourist_attraction|museum|park&'
+          'language=es&'
+          'key=$apiKey');
+
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List results = data['results'] ?? [];
+
+        return results
+            .take(3)
+            .map((place) => NearbyPlace(
+                  placeId: place['place_id'],
+                  name: place['name'],
+                  rating: place['rating']?.toDouble(),
+                  types: List<String>.from(place['types'] ?? []),
+                  vicinity: place['vicinity'],
+                  priceLevel: place['price_level'],
+                ))
+            .toList();
+      }
+    } catch (e) {
+      print('Error buscando lugares cercanos: $e');
+    }
+    return [];
+  }
+
+  // Modal para añadir un lugar de la lista de lugares cercanos
+  void _showAddPlaceModal(LatLng position, List<NearbyPlace> places) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.add_location, color: Colors.green, size: 28),
+                  SizedBox(width: 10),
+                  Text(
+                    'Añadir lugar a la guía',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 20),
+              Text(
+                'Lugares encontrados cerca:',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[700],
+                ),
+              ),
+              SizedBox(height: 16),
+              ...places
+                  .map((place) => Card(
+                        margin: EdgeInsets.only(bottom: 12),
+                        child: ListTile(
+                          leading: Icon(
+                            _getIconForPlaceType(place.types),
+                            color: Colors.blue,
+                            size: 24,
+                          ),
+                          title: Text(
+                            place.name,
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (place.vicinity != null) Text(place.vicinity!),
+                              if (place.rating != null)
+                                Row(
+                                  children: [
+                                    Icon(Icons.star,
+                                        color: Colors.amber, size: 16),
+                                    SizedBox(width: 4),
+                                    Text('${place.rating!.toStringAsFixed(1)}'),
+                                  ],
+                                ),
+                            ],
+                          ),
+                          trailing: Icon(Icons.add, color: Colors.green),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _showAddToGuideDialog(place, position);
+                          },
+                        ),
+                      ))
+                  .toList(),
+              SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: Icon(Icons.add),
+                  label: Text('Añadir lugar personalizado'),
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _showAddCustomPlaceModal(position);
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Modal para añadir un lugar personalizado
+  void _showAddCustomPlaceModal(LatLng position) {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+    String selectedCategory = 'cultural';
+    int selectedDay = _selectedDays.isNotEmpty ? _selectedDays.first : 1;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setState) {
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.add_location, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Nuevo lugar'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Nombre del lugar',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.place),
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  TextField(
+                    controller: descriptionController,
+                    decoration: InputDecoration(
+                      labelText: 'Descripción (opcional)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.description),
+                    ),
+                    maxLines: 3,
+                  ),
+                  SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedCategory,
+                    decoration: InputDecoration(
+                      labelText: 'Categoría',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.category),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                          value: 'cultural', child: Text('Cultural')),
+                      DropdownMenuItem(
+                          value: 'gastronomia', child: Text('Gastronomía')),
+                      DropdownMenuItem(
+                          value: 'entretenimiento',
+                          child: Text('Entretenimiento')),
+                      DropdownMenuItem(
+                          value: 'compras', child: Text('Compras')),
+                      DropdownMenuItem(
+                          value: 'naturaleza', child: Text('Naturaleza')),
+                      DropdownMenuItem(
+                          value: 'alojamiento', child: Text('Alojamiento')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          selectedCategory = value;
+                        });
+                      }
+                    },
+                  ),
+                  SizedBox(height: 16),
+                  DropdownButtonFormField<int>(
+                    value: selectedDay,
+                    decoration: InputDecoration(
+                      labelText: 'Añadir al día',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.calendar_today),
+                    ),
+                    items: _getAvailableDays()
+                        .map((day) => DropdownMenuItem(
+                              value: day,
+                              child: Text('Día $day'),
+                            ))
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          selectedDay = value;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (nameController.text.trim().isNotEmpty) {
+                    Navigator.pop(context);
+                    _addCustomPlaceToGuide(
+                      nameController.text.trim(),
+                      descriptionController.text.trim(),
+                      selectedCategory,
+                      selectedDay,
+                      position,
+                    );
+                  }
+                },
+                child: Text('Añadir'),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  // Dialog para añadir lugar de Google Places a la guía
+  void _showAddToGuideDialog(NearbyPlace place, LatLng position) {
+    String selectedCategory = _getCategoryFromPlaceTypes(place.types);
+    int selectedDay = _selectedDays.isNotEmpty ? _selectedDays.first : 1;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setState) {
+          return AlertDialog(
+            title: Text('Añadir "${place.name}" a la guía'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (place.rating != null)
+                  Row(
+                    children: [
+                      Icon(Icons.star, color: Colors.amber),
+                      SizedBox(width: 4),
+                      Text('${place.rating!.toStringAsFixed(1)} / 5.0'),
+                    ],
+                  ),
+                SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedCategory,
+                  decoration: InputDecoration(
+                    labelText: 'Categoría',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(
+                        value: 'cultural', child: Text('Cultural')),
+                    DropdownMenuItem(
+                        value: 'gastronomia', child: Text('Gastronomía')),
+                    DropdownMenuItem(
+                        value: 'entretenimiento',
+                        child: Text('Entretenimiento')),
+                    DropdownMenuItem(value: 'compras', child: Text('Compras')),
+                    DropdownMenuItem(
+                        value: 'naturaleza', child: Text('Naturaleza')),
+                    DropdownMenuItem(
+                        value: 'alojamiento', child: Text('Alojamiento')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        selectedCategory = value;
+                      });
+                    }
+                  },
+                ),
+                SizedBox(height: 16),
+                DropdownButtonFormField<int>(
+                  value: selectedDay,
+                  decoration: InputDecoration(
+                    labelText: 'Añadir al día',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _getAvailableDays()
+                      .map((day) => DropdownMenuItem(
+                            value: day,
+                            child: Text('Día $day'),
+                          ))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        selectedDay = value;
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _addGooglePlaceToGuide(
+                      place, selectedCategory, selectedDay, position);
+                },
+                child: Text('Añadir'),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  // Obtener días disponibles en la guía
+  List<int> _getAvailableDays() {
+    final days = <int>[];
+    if (_guide != null && _guide!['days'] != null) {
+      for (final day in _guide!['days']) {
+        days.add(day['dayNumber'] as int);
+      }
+    }
+    return days..sort();
+  }
+
+  // Reconstituir la lista de actividades desde la guía actual
+  void _rebuildActivitiesFromGuide() {
+    print('🚀 _rebuildActivitiesFromGuide() LLAMADA');
+    if (_guide == null || _guide!['days'] == null) {
+      print('❌ _rebuildActivitiesFromGuide() - Guía o días son null');
+      return;
+    }
+
+    final List<Activity> allActivities = [];
+    int activitiesWithCoordinates = 0;
+    int activitiesWithoutCoordinates = 0;
+
+    for (final day in _guide!['days']) {
+      final dayNumber = day['dayNumber'] as int;
+      final activities = day['activities'] as List?;
+
+      if (activities != null) {
+        for (int i = 0; i < activities.length; i++) {
+          final activityData = activities[i] as Map<String, dynamic>;
+
+          // Debug: Imprimir estructura de la actividad
+          print(
+              '🔍 Actividad ${i + 1} del día $dayNumber: "${activityData['title']}"');
+          print(
+              '   - Tiene coordinates: ${activityData['coordinates'] != null}');
+          print('   - Tiene location: ${activityData['location'] != null}');
+          if (activityData['coordinates'] != null) {
+            print('   - coordinates: ${activityData['coordinates']}');
+          }
+          if (activityData['location'] != null) {
+            print('   - location: ${activityData['location']}');
+          }
+
+          // Convertir coordenadas a LatLng si existen
+          LatLng? location;
+          Map<String, dynamic>? coords;
+
+          // Verificar primero en 'coordinates', luego en 'location' (compatibilidad)
+          if (activityData['coordinates'] != null) {
+            coords = activityData['coordinates'] as Map<String, dynamic>;
+          } else if (activityData['location'] != null) {
+            coords = activityData['location'] as Map<String, dynamic>;
+          }
+
+          if (coords != null) {
+            final lat = coords['latitude']?.toDouble();
+            final lng = coords['longitude']?.toDouble();
+
+            if (lat != null && lng != null && lat != 0.0 && lng != 0.0) {
+              location = LatLng(lat, lng);
+              activitiesWithCoordinates++;
+
+              // Si las coordenadas estaban en 'location', migrarlas a 'coordinates'
+              if (activityData['location'] != null &&
+                  activityData['coordinates'] == null) {
+                print(
+                    '🔄 Migrando coordenadas de "location" a "coordinates" para "${activityData['title']}"');
+                activityData['coordinates'] = coords;
+                activityData.remove('location'); // Limpiar el campo viejo
+              }
+            } else {
+              activitiesWithoutCoordinates++;
+            }
+          } else {
+            activitiesWithoutCoordinates++;
+          }
+
+          final activity = Activity(
+            id: activityData['id'] ?? 'activity_${dayNumber}_$i',
+            title: activityData['title'] ?? '',
+            description: activityData['description'] ?? '',
+            duration: (activityData['duration'] as num?)?.toInt() ?? 60,
+            day: dayNumber,
+            order: i,
+            images: List<String>.from(activityData['images'] ?? []),
+            city: activityData['city'] ?? _guide?['city'] ?? '',
+            category: activityData['category'] ?? 'cultural',
+            likes: (activityData['likes'] as num?)?.toInt() ?? 0,
+            location: location,
+            googleRating: (activityData['googleRating'] as num?)?.toDouble(),
+            price: activityData['price'] as String?,
+          );
+
+          allActivities.add(activity);
+        }
+      }
+    }
+
+    _allActivities = allActivities;
+
+    // Log del estado de coordenadas
+    print('📍 Actividades cargadas: ${allActivities.length} total');
+    print('✅ Con coordenadas guardadas: $activitiesWithCoordinates');
+    print(
+        '🔍 Sin coordenadas (requieren geocodificación): $activitiesWithoutCoordinates');
+  }
+
+  // Añadir lugar personalizado a la guía
+  Future<void> _addCustomPlaceToGuide(
+    String name,
+    String description,
+    String category,
+    int day,
+    LatLng position,
+  ) async {
+    try {
+      // Crear nueva actividad
+      final newActivity = {
+        'id': 'custom_${DateTime.now().millisecondsSinceEpoch}',
+        'title': name,
+        'description': description,
+        'category': category,
+        'day': day,
+        'duration': 60, // duración por defecto
+        'likes': 0,
+        'images': <String>[],
+        'coordinates': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        },
+        'city': _guide?['city'] ?? '',
+      };
+
+      // Añadir a la estructura local
+      final dayIndex = _guide!['days'].indexWhere((d) => d['dayNumber'] == day);
+      if (dayIndex != -1) {
+        final activities = List.from(_guide!['days'][dayIndex]['activities']);
+        activities.add(newActivity);
+        _guide!['days'][dayIndex]['activities'] = activities;
+
+        // Guardar en Firestore
+        await _updateDayActivities(
+            day, activities.cast<Map<String, dynamic>>());
+
+        // Actualizar la lista de actividades para el mapa
+        _rebuildActivitiesFromGuide();
+
+        // Asegurar que el día esté seleccionado para mostrar el nuevo marcador
+        if (!_selectedDays.contains(day)) {
+          setState(() {
+            _selectedDays.add(day);
+          });
+        }
+
+        // Actualizar marcadores en el mapa
+        await _createMarkersFromActivities();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ "$name" añadido al día $day'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error añadiendo lugar personalizado: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error al añadir el lugar'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // Añadir lugar de Google Places a la guía
+  Future<void> _addGooglePlaceToGuide(
+    NearbyPlace place,
+    String category,
+    int day,
+    LatLng position,
+  ) async {
+    try {
+      // Obtener información adicional del lugar
+      final placeInfo =
+          await PlacesService.getPlaceInfo(place.name, _guide?['city'] ?? '');
+
+      // Crear nueva actividad
+      final newActivity = {
+        'id':
+            'google_${place.placeId}_${DateTime.now().millisecondsSinceEpoch}',
+        'title': place.name,
+        'description': placeInfo?.address ?? place.vicinity ?? '',
+        'category': category,
+        'day': day,
+        'duration': 60, // duración por defecto
+        'likes': 0,
+        'images': <String>[],
+        'coordinates': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        },
+        'city': _guide?['city'] ?? '',
+        'googleRating': place.rating,
+        'googlePlaceId': place.placeId,
+      };
+
+      // Añadir a la estructura local
+      final dayIndex = _guide!['days'].indexWhere((d) => d['dayNumber'] == day);
+      if (dayIndex != -1) {
+        final activities = List.from(_guide!['days'][dayIndex]['activities']);
+        activities.add(newActivity);
+        _guide!['days'][dayIndex]['activities'] = activities;
+
+        // Guardar en Firestore
+        await _updateDayActivities(
+            day, activities.cast<Map<String, dynamic>>());
+
+        // Actualizar la lista de actividades para el mapa
+        _rebuildActivitiesFromGuide();
+
+        // Asegurar que el día esté seleccionado para mostrar el nuevo marcador
+        if (!_selectedDays.contains(day)) {
+          setState(() {
+            _selectedDays.add(day);
+          });
+        }
+
+        // Actualizar marcadores en el mapa
+        await _createMarkersFromActivities();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ "${place.name}" añadido al día $day'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error añadiendo lugar de Google: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Error al añadir el lugar'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // Obtener icono basado en el tipo de lugar
+  IconData _getIconForPlaceType(List<String> types) {
+    if (types.contains('restaurant') || types.contains('food'))
+      return Icons.restaurant;
+    if (types.contains('tourist_attraction')) return Icons.attractions;
+    if (types.contains('museum')) return Icons.museum;
+    if (types.contains('park')) return Icons.park;
+    if (types.contains('shopping_mall') || types.contains('store'))
+      return Icons.shopping_bag;
+    if (types.contains('lodging')) return Icons.hotel;
+    return Icons.place;
+  }
+
+  // Obtener categoría basada en los tipos de lugar de Google
+  String _getCategoryFromPlaceTypes(List<String> types) {
+    if (types.contains('restaurant') ||
+        types.contains('food') ||
+        types.contains('meal_takeaway')) {
+      return 'gastronomia';
+    }
+    if (types.contains('shopping_mall') ||
+        types.contains('store') ||
+        types.contains('clothing_store')) {
+      return 'compras';
+    }
+    if (types.contains('park') || types.contains('natural_feature')) {
+      return 'naturaleza';
+    }
+    if (types.contains('lodging') || types.contains('hotel')) {
+      return 'alojamiento';
+    }
+    if (types.contains('night_club') || types.contains('amusement_park')) {
+      return 'entretenimiento';
+    }
+    return 'cultural'; // Por defecto
   }
 }
