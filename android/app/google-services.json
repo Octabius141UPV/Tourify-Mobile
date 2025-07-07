@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "679229335063",
+    "project_id": "tourify-18a0b",
+    "storage_bucket": "tourify-18a0b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:679229335063:android:f98eed5a3aa58f2dc75e52",
+        "android_client_info": {
+          "package_name": "com.mycompany.tourify"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "679229335063-3andcil3j6293qmhtt4oh5c9ka6guj53.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mycompany.tourify",
+            "certificate_hash": "9bbb3186b2189ef16d8f272bdab59362c395cbb4"
+          }
+        },
+        {
+          "client_id": "679229335063-bs3dege7gqf9fpnq7m6co9mkkq23vqfk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDkTQsGvjGAoW3N5-UbEdduMSzRTUM9oiI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "679229335063-1rl3sgvfo12pjcvgd3dvfp9qcatdn5s9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "679229335063-1oi55c9mktqe1uk3o70e6mnoe0ovi9a9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.mycompany.tourify"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -2,6 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Necesitamos tu ubicación para mostrar el mapa correctamente.</string>
+
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>Esta app necesita acceder a tu ubicación en segundo plano para funciones avanzadas.</string>
+
+		<key>io.flutter.embedded_views_preview</key>
+		<true/>
+
+		<key>GMSApiKey</key>
+		<string>AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM</string>
+
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
 		<key>CFBundleDevelopmentRegion</key>

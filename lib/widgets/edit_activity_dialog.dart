@@ -88,6 +88,7 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
         startTime: widget.activity.startTime,
         endTime: widget.activity.endTime,
         price: widget.activity.price,
+        location: widget.activity.location, // PRESERVAR ubicación existente
       );
       await widget.onSave(updatedActivity);
       if (mounted) {

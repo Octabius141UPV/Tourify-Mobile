@@ -20,7 +20,16 @@ import '../services/guide_service.dart';
 import '../services/public_guides_service.dart';
 import 'collaborators_screen.dart';
 import 'premium_subscription_screen.dart';
+import 'guide_map_screen.dart';
 import 'dart:io';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../services/map/geocoding_service.dart';
+import '../services/map/places_service.dart';
+import '../widgets/map/activity_marker_utils.dart';
+import '../config/app_colors.dart';
+import 'dart:async';
+import 'dart:math';
+
 import '../widgets/travel_agent_chat_widget.dart';
 import '../widgets/premium_feature_modal.dart';
 
@@ -57,6 +66,36 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   // Variables para el gesto de swipe
   double _swipeStartX = 0.0;
   bool _isSwipeActive = false;
+
+  // Variables para el mapa integrado
+  bool _isMapVisible = false;
+  double _mapHeightFraction = 0.4; // 40% del alto inicial
+  GoogleMapController? _mapController;
+  Set<Marker> _markers = {};
+  LatLng? _centerLocation;
+  bool _isMapLoading = false;
+  Set<Polyline> _polylines = {};
+  List<Activity> _allActivities = [];
+  Set<int> _selectedDays = {}; // NUEVO: días seleccionados para el mapa
+
+  // Estilo gris para las carreteras del mapa
+  final String _greyRoadsMapStyle = '''
+  [
+    {"featureType": "road","elementType": "geometry","stylers": [{"color": "#b0b0b0"}]},
+    {"featureType": "road.arterial","elementType": "geometry","stylers": [{"color": "#cccccc"}]},
+    {"featureType": "road.highway","elementType": "geometry","stylers": [{"color": "#a0a0a0"}]},
+    {"featureType": "road.local","elementType": "geometry","stylers": [{"color": "#e0e0e0"}]},
+    {"featureType": "road","elementType": "labels.text.fill","stylers": [{"color": "#888888"}]},
+    {"featureType": "road","elementType": "labels.text.stroke","stylers": [{"color": "#ffffff"},{"weight": 2}]}
+  ]
+  ''';
+
+  // NUEVO: Para saber qué marcador está seleccionado
+  MarkerId? _selectedMarkerId;
+
+  // Guardar el mapping de actividad a MarkerId y su posición
+  Map<String, LatLng> _activityIdToLatLng = {};
+  Map<String, int> _activityIdToPinNumber = {};
 
   @override
   void initState() {
@@ -180,13 +219,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     }
 
     return GestureDetector(
-      onPanUpdate: (details) {
-        // Detectar deslizamiento horizontal desde la izquierda
-        if (details.delta.dx > 0 && details.globalPosition.dx < 50) {
-          // Solo procesar si el deslizamiento comienza cerca del borde izquierdo
-          _handleSwipeFromLeft(details);
-        }
-      },
       onPanEnd: (details) {
         _handleSwipeEnd(details);
       },
@@ -214,22 +246,58 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
               ),
             ],
           ),
-          body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _guide == null
-                  ? const Center(child: Text('No se encontró la guía'))
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.all(8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildGuideHeader(),
-                          const SizedBox(height: 16),
-                          _buildDaysSection(),
-                        ],
-                      ),
-                    ),
-          floatingActionButton: _canEdit ? _buildFloatingActionMenu() : null,
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 500),
+            transitionBuilder: (child, animation) {
+              // Fade + Slide desde abajo
+              final offsetAnimation = Tween<Offset>(
+                begin: const Offset(0, 0.1),
+                end: Offset.zero,
+              ).animate(animation);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: offsetAnimation,
+                  child: child,
+                ),
+              );
+            },
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(),
+                    key: ValueKey('loading'))
+                : _guide == null
+                    ? const Center(
+                        child: Text('No se encontró la guía',
+                            key: ValueKey('notfound')))
+                    : _isMapVisible
+                        ? _buildMapAndGuideLayout(key: const ValueKey('map'))
+                        : SingleChildScrollView(
+                            key: const ValueKey('guide'),
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildGuideHeader(),
+                                const SizedBox(height: 16),
+                                _buildDaysSection(),
+                              ],
+                            ),
+                          ),
+          ),
+          floatingActionButton: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              if (!_isMapVisible && _canEdit) // dial sólo si puede editar
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: _buildFloatingActionMenu(),
+                ),
+              // Botón flotante de mapa
+              if (!_isMenuExpanded) _buildFloatingMapButton(),
+            ],
+          ),
         ),
       ),
     );
@@ -336,56 +404,64 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
           // Botón gestionar colaboradores - solo mostrar para owners y organizadores
           if (!widget.guideId.startsWith('predefined_') &&
               (_isOwner || _userRole == 'editor')) ...[
-            // Debug para verificar por qué no aparece
             Builder(
               builder: (context) {
                 print('DEBUG: Evaluando botón colaboradores');
                 print('DEBUG: guideId: ${widget.guideId}');
                 print(
-                    'DEBUG: !predefined: ${!widget.guideId.startsWith('predefined_')}');
+                    'DEBUG: !predefined: \\${!widget.guideId.startsWith('predefined_')}');
                 print('DEBUG: _isOwner: $_isOwner');
                 print('DEBUG: _userRole: $_userRole');
-                print('DEBUG: _userRole == editor: ${_userRole == 'editor'}');
+                print('DEBUG: _userRole == editor: \\${_userRole == 'editor'}');
                 print(
-                    'DEBUG: Condición final: ${!widget.guideId.startsWith('predefined_') && (_isOwner || _userRole == 'editor')}');
+                    'DEBUG: Condición final: \\${!widget.guideId.startsWith('predefined_') && (_isOwner || _userRole == 'editor')}');
                 return SizedBox.shrink();
               },
             ),
-            SizedBox(
-              width: double.infinity,
-              child: GestureDetector(
-                onTap: _openCollaborators,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF2196F3), // Azul claro
-                        Color(0xFF0D47A1), // Azul profundo
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
-                      Icon(Icons.people, color: Colors.white),
-                      SizedBox(width: 8),
-                      Text(
-                        'Gestionar colaboradores',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
+
+            // Fila con botón de colaboradores (eliminar botón de mapa de aquí)
+            Row(
+              children: [
+                // Botón gestionar colaboradores
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _openCollaborators,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF2196F3), // Azul claro
+                            Color(0xFF0D47A1), // Azul profundo
+                          ],
                         ),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    ],
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.people, color: Colors.white),
+                          SizedBox(width: 8),
+                          Text(
+                            'Colaboradores',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
+            const SizedBox(height: 12),
+          ] else ...[
+            // Eliminar botón de mapa de aquí
             const SizedBox(height: 12),
           ],
 
@@ -573,217 +649,236 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     final activityObj = Activity.fromMap(activity, activity['id'].toString());
     final bool descripcionLarga = activityObj.description.length > 80;
     bool verMas = false;
+    // Obtener el número del pin si el mapa está visible
+    int? pinNum = _isMapVisible ? _activityIdToPinNumber[activityObj.id] : null;
 
     return StatefulBuilder(
       builder: (context, setState) {
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.07),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Imagen con overlay de duración
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(18),
-                      topRight: Radius.circular(18),
-                    ),
-                    child: activityObj.images.isNotEmpty
-                        ? Image.network(
-                            activityObj.images.first,
-                            width: double.infinity,
-                            height: 160,
-                            fit: BoxFit.cover,
-                          )
-                        : Image.network(
-                            _getPlaceholderImage(activityObj.category ?? ''),
-                            width: double.infinity,
-                            height: 160,
-                            fit: BoxFit.cover,
-                          ),
-                  ),
-                  // Duración arriba izquierda
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.85),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.access_time,
-                              size: 16, color: Colors.grey),
-                          const SizedBox(width: 4),
-                          Text('${activityObj.duration} min',
-                              style: const TextStyle(
-                                  fontSize: 13, color: Colors.black87)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        return GestureDetector(
+          onTap: _isMapVisible
+              ? () => _focusOnActivityFromList(activityObj)
+              : null,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.07),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Imagen con overlay de duración
+                Stack(
                   children: [
-                    // Título con menú de 3 puntitos
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on,
-                            size: 18, color: Color(0xFF2196F3)),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            activityObj.title.isNotEmpty
-                                ? activityObj.title
-                                : 'Sin título',
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
+                    ClipRRect(
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(18),
+                        topRight: Radius.circular(18),
+                      ),
+                      child: activityObj.images.isNotEmpty
+                          ? Image.network(
+                              activityObj.images.first,
+                              width: double.infinity,
+                              height: 160,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Image.asset(
+                                  'assets/images/no-image.png',
+                                  width: double.infinity,
+                                  height: 160,
+                                  fit: BoxFit.cover,
+                                );
+                              },
+                            )
+                          : Image.asset(
+                              'assets/images/no-image.png',
+                              width: double.infinity,
+                              height: 160,
+                              fit: BoxFit.cover,
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                    ),
+                    // Duración arriba izquierda
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                        // Solo mostrar el menú si el usuario tiene permisos de edición
-                        if (_canEdit)
-                          PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert,
-                                color: Colors.black87),
-                            onSelected: (value) {
-                              if (value == 'edit') {
-                                _editActivity(activity);
-                              } else if (value == 'delete') {
-                                _deleteActivity(activity);
-                              } else if (value == 'maps') {
-                                _exportToGoogleMaps(activity);
-                              } else if (value == 'calendar') {
-                                _addToGoogleCalendar(activity);
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(
-                                value: 'edit',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.edit, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Editar'),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.delete,
-                                        size: 18, color: Colors.red),
-                                    SizedBox(width: 8),
-                                    Text('Eliminar'),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'maps',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.map,
-                                        size: 18, color: Colors.green),
-                                    SizedBox(width: 8),
-                                    Text('Abrir en Maps'),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem(
-                                value: 'calendar',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.calendar_today,
-                                        size: 18, color: Colors.blue),
-                                    SizedBox(width: 8),
-                                    Text('Añadir a calendario'),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            color: Colors.white,
-                            elevation: 8,
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      !descripcionLarga || verMas
-                          ? activityObj.description
-                          : activityObj.description.substring(0, 80) + '...',
-                      style:
-                          const TextStyle(fontSize: 14, color: Colors.black87),
-                      maxLines: verMas ? null : 2,
-                      overflow:
-                          verMas ? TextOverflow.visible : TextOverflow.ellipsis,
-                    ),
-                    if (descripcionLarga && !verMas)
-                      GestureDetector(
-                        onTap: () => setState(() => verMas = true),
-                        child: const Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Text(
-                            'Ver más',
-                            style: TextStyle(
-                              color: Color(0xFF2196F3),
-                              fontWeight: FontWeight.w500,
-                              fontSize: 14,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.access_time,
+                                size: 16, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Text('${activityObj.duration} min',
+                                style: const TextStyle(
+                                    fontSize: 13, color: Colors.black87)),
+                          ],
                         ),
                       ),
-                    const SizedBox(height: 16),
-                    // Solo mostrar botón de Civitatis para actividades culturales
-                    if (activityObj.category?.toLowerCase() == 'cultural' ||
-                        activityObj.category?.toLowerCase() == 'cultura')
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF2196F3),
-                            side: const BorderSide(
-                                color: Color(0xFF2196F3), width: 1.5),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24)),
-                            textStyle: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w600),
-                          ),
-                          icon: const Icon(Icons.confirmation_number, size: 18),
-                          label: const Text('Reservar actividad'),
-                          onPressed: () => _openInCivitatis(activityObj),
-                        ),
-                      ),
-                    const SizedBox(height: 12),
+                    ),
                   ],
                 ),
-              ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Título con menú de 3 puntitos
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on,
+                              size: 18, color: Color(0xFF2196F3)),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              pinNum != null
+                                  ? '$pinNum. ${activityObj.title}'
+                                  : activityObj.title.isNotEmpty
+                                      ? activityObj.title
+                                      : 'Sin título',
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          // Solo mostrar el menú si el usuario tiene permisos de edición
+                          if (_canEdit)
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert,
+                                  color: Colors.black87),
+                              onSelected: (value) {
+                                if (value == 'edit') {
+                                  _editActivity(activity);
+                                } else if (value == 'delete') {
+                                  _deleteActivity(activity);
+                                } else if (value == 'maps') {
+                                  _exportToGoogleMaps(activity);
+                                } else if (value == 'calendar') {
+                                  _addToGoogleCalendar(activity);
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit, size: 18),
+                                      SizedBox(width: 8),
+                                      Text('Editar'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete,
+                                          size: 18, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Eliminar'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'maps',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.map,
+                                          size: 18, color: Colors.green),
+                                      SizedBox(width: 8),
+                                      Text('Abrir en Maps'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'calendar',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.calendar_today,
+                                          size: 18, color: Colors.blue),
+                                      SizedBox(width: 8),
+                                      Text('Añadir a calendario'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              color: Colors.white,
+                              elevation: 8,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        !descripcionLarga || verMas
+                            ? activityObj.description
+                            : activityObj.description.substring(0, 80) + '...',
+                        style: const TextStyle(
+                            fontSize: 14, color: Colors.black87),
+                        maxLines: verMas ? null : 2,
+                        overflow: verMas
+                            ? TextOverflow.visible
+                            : TextOverflow.ellipsis,
+                      ),
+                      if (descripcionLarga && !verMas)
+                        GestureDetector(
+                          onTap: () => setState(() => verMas = true),
+                          child: const Padding(
+                            padding: EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Ver más',
+                              style: TextStyle(
+                                color: Color(0xFF2196F3),
+                                fontWeight: FontWeight.w500,
+                                fontSize: 14,
+                                decoration: TextDecoration.underline,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                      // Solo mostrar botón de Civitatis para actividades culturales
+                      if (activityObj.category?.toLowerCase() == 'cultural' ||
+                          activityObj.category?.toLowerCase() == 'cultura')
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF2196F3),
+                              side: const BorderSide(
+                                  color: Color(0xFF2196F3), width: 1.5),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24)),
+                              textStyle: const TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600),
+                            ),
+                            icon:
+                                const Icon(Icons.confirmation_number, size: 18),
+                            label: const Text('Reservar actividad'),
+                            onPressed: () => _openInCivitatis(activityObj),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -1550,67 +1645,110 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                 ? Column(
                     children: [
                       // Botón Agente de Viaje IA
-                      Tooltip(
-                        message: 'Agente de viaje IA',
-                        child: _buildCircularButton(
-                          onTap: _openTravelAgent,
-                          size: 56,
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF42A5F5), // Azul claro
-                              Color(0xFF1565C0), // Azul oscuro
-                            ],
-                          ),
-                          shadowColor: Colors.blue,
-                          icon: null,
-                          iconSize: 24,
-                          customChild: Image.asset(
-                            'assets/images/agent_avatar.png',
-                            width: 48,
-                            height: 48,
+                      AnimatedSlide(
+                        offset: _isMenuExpanded ? Offset(0, 0) : Offset(0, 0.9),
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeOutBack,
+                        child: AnimatedScale(
+                          scale: _isMenuExpanded ? 1.0 : 0.7,
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutBack,
+                          child: AnimatedOpacity(
+                            opacity: _isMenuExpanded ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 600),
+                            child: Tooltip(
+                              message: 'Agente de viaje',
+                              child: _buildCircularButton(
+                                onTap: _openTravelAgent,
+                                size: 46,
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF42A5F5), // Azul claro
+                                    Color(0xFF1565C0), // Azul oscuro
+                                  ],
+                                ),
+                                shadowColor: Colors.blue,
+                                customChild: ClipOval(
+                                  child: Image.asset(
+                                    'assets/images/agent_avatar.png',
+                                    width: 32,
+                                    height: 32,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                       const SizedBox(height: 12),
                       // Botón Ordenar Actividades
-                      Tooltip(
-                        message: 'Organizar actividades',
-                        child: _buildCircularButton(
-                          onTap: _showOrganizeModal,
-                          size: 56,
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF42A5F5), // Azul claro
-                              Color(0xFF1565C0), // Azul oscuro
-                            ],
+                      AnimatedSlide(
+                        offset: _isMenuExpanded ? Offset(0, 0) : Offset(0, 0.6),
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeOutBack,
+                        child: AnimatedScale(
+                          scale: _isMenuExpanded ? 1.0 : 0.7,
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutBack,
+                          child: AnimatedOpacity(
+                            opacity: _isMenuExpanded ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 600),
+                            child: Tooltip(
+                              message: 'Organizar actividades',
+                              child: _buildCircularButton(
+                                onTap: _showOrganizeModal,
+                                size: 46,
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF42A5F5), // Azul claro
+                                    Color(0xFF1565C0), // Azul oscuro
+                                  ],
+                                ),
+                                shadowColor: Colors.blue,
+                                icon: Icons.swap_vert_rounded,
+                                iconSize: 24,
+                              ),
+                            ),
                           ),
-                          shadowColor: Colors.blue,
-                          icon: Icons.swap_vert_rounded,
-                          iconSize: 24,
                         ),
                       ),
                       const SizedBox(height: 12),
                       // Botón Añadir Actividad
-                      Tooltip(
-                        message: 'Añadir actividad',
-                        child: _buildCircularButton(
-                          onTap: _addNewActivity,
-                          size: 56,
-                          gradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFF42A5F5), // Azul claro
-                              Color(0xFF1565C0), // Azul oscuro
-                            ],
+                      AnimatedSlide(
+                        offset: _isMenuExpanded ? Offset(0, 0) : Offset(0, 0.3),
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeOutBack,
+                        child: AnimatedScale(
+                          scale: _isMenuExpanded ? 1.0 : 0.7,
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutBack,
+                          child: AnimatedOpacity(
+                            opacity: _isMenuExpanded ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 600),
+                            child: Tooltip(
+                              message: 'Añadir actividad',
+                              child: _buildCircularButton(
+                                onTap: _addNewActivity,
+                                size: 46,
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    Color(0xFF42A5F5), // Azul claro
+                                    Color(0xFF1565C0), // Azul oscuro
+                                  ],
+                                ),
+                                shadowColor: Colors.blue,
+                                icon: Icons.add,
+                                iconSize: 24,
+                              ),
+                            ),
                           ),
-                          shadowColor: Colors.blue,
-                          icon: Icons.add,
-                          iconSize: 24,
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -1624,7 +1762,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
           message: _isMenuExpanded ? 'Cerrar menú' : 'Abrir menú',
           child: _buildCircularButton(
             onTap: _toggleMenu,
-            size: 64,
+            size: 54,
             gradient: _isMenuExpanded
                 ? const LinearGradient(
                     begin: Alignment.topLeft,
@@ -1958,5 +2096,844 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       context: context,
       builder: (context) => const PremiumFeatureModal(),
     );
+  }
+
+  void _openGuideMap() async {
+    try {
+      if (_guide == null || _guide!['days'].isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay actividades para mostrar en el mapa'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Recopilar todas las actividades de todos los días
+      List<Activity> allActivities = [];
+      Set<int> allDays = {};
+      for (final day in _guide!['days']) {
+        if (day['activities'] != null && day['activities'] is List) {
+          final dayNumber = day['dayNumber'] ?? 1; // Obtener el número de día
+          allDays.add(dayNumber);
+          for (final activity in day['activities']) {
+            final activityWithDay = Map<String, dynamic>.from(activity);
+            activityWithDay['day'] = dayNumber;
+            final activityObj =
+                Activity.fromMap(activityWithDay, activity['id'].toString());
+            allActivities.add(activityObj);
+          }
+        }
+      }
+      if (allActivities.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay actividades para mostrar en el mapa'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+      if (_isMenuExpanded) {
+        setState(() {
+          _isMenuExpanded = false;
+        });
+      }
+      setState(() {
+        _allActivities = allActivities;
+        _isMapVisible = true;
+        _isMapLoading = true;
+        _selectedDays = allDays; // Seleccionar todos los días por defecto
+      });
+      await _initializeIntegratedMap();
+    } catch (e) {
+      print('Error al abrir el mapa: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al abrir el mapa: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _initializeIntegratedMap() async {
+    try {
+      await _getCityLocation();
+      await _createMarkersFromActivities();
+      if (mounted) {
+        setState(() {
+          _isMapLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error inicializando mapa integrado: $e');
+      if (mounted) {
+        setState(() {
+          _isMapLoading = false;
+          _isMapVisible = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar el mapa: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _getCityLocation() async {
+    try {
+      final city = _guide?['city'] ?? '';
+      final LatLng? cityLatLng =
+          await GeocodingService.getLatLngFromAddress(city);
+      if (cityLatLng != null) {
+        _centerLocation = cityLatLng;
+        print('🎯 Ciudad: $city -> $_centerLocation');
+      } else {
+        print('No se pudo geocodificar la ciudad: $city');
+        _centerLocation = const LatLng(40.4168, -3.7038); // fallback Madrid
+      }
+    } catch (e) {
+      print('Error obteniendo ubicación de la ciudad: $e');
+      _centerLocation = const LatLng(40.4168, -3.7038); // fallback Madrid
+    }
+  }
+
+  Future<void> _createMarkersFromActivities() async {
+    final Set<Marker> markers = {};
+    final city = _guide?['city'] ?? '';
+    bool hasUpdatedActivities = false;
+    List<Activity> updatedActivities = [];
+    _activityIdToLatLng.clear();
+    _activityIdToPinNumber.clear();
+    // Definir colores para los días
+    final List<Color> dayColors = [
+      Colors.blue,
+      Colors.red,
+      Colors.green,
+      Colors.orange,
+      Colors.purple,
+      Colors.teal,
+      Colors.pink,
+      Colors.brown,
+      Colors.cyan,
+      Colors.indigo,
+    ];
+    // NUEVO: Primero asignar números de pin a TODAS las actividades según su orden en la guía
+    int pinCounter = 1;
+    for (final activity in _allActivities) {
+      _activityIdToPinNumber[activity.id] = pinCounter;
+      pinCounter++;
+    }
+
+    // Luego filtrar solo las actividades de los días seleccionados manteniendo sus números originales
+    List<Activity> orderedActivities = [];
+    for (final activity in _allActivities) {
+      // Solo incluir si está en los días seleccionados
+      if (_selectedDays.contains(activity.day)) {
+        orderedActivities.add(activity);
+      }
+    }
+    // Ahora crear los marcadores en el mismo orden
+    // Map para contar cuántas actividades hay en cada localización
+    Map<String, int> locationCount = {};
+    Map<String, int> locationIndex = {};
+    for (final activity in orderedActivities) {
+      LatLng? activityLocation = activity.location;
+      if (activityLocation == null) {
+        final nombreLimpio = limpiarNombreActividad(activity.title);
+        final address = '$nombreLimpio, $city';
+        activityLocation = await GeocodingService.getLatLngFromAddress(address);
+        if (activityLocation != null) {
+          final updatedActivity = Activity(
+            id: activity.id,
+            title: activity.title,
+            description: activity.description,
+            duration: activity.duration,
+            day: activity.day,
+            order: activity.order,
+            images: activity.images,
+            city: activity.city,
+            category: activity.category,
+            likes: activity.likes,
+            startTime: activity.startTime,
+            endTime: activity.endTime,
+            price: activity.price,
+            location: activityLocation,
+            googleRating: activity.googleRating,
+            googleReview: activity.googleReview,
+          );
+          updatedActivities.add(updatedActivity);
+          final idx = _allActivities.indexWhere((a) => a.id == activity.id);
+          if (idx != -1) _allActivities[idx] = updatedActivity;
+          hasUpdatedActivities = true;
+        } else {
+          updatedActivities.add(activity);
+        }
+      } else {
+        updatedActivities.add(activity);
+      }
+      if (activityLocation != null) {
+        // Generar clave única para la localización
+        final locKey =
+            '${activityLocation.latitude.toStringAsFixed(6)},${activityLocation.longitude.toStringAsFixed(6)}';
+        locationCount[locKey] = (locationCount[locKey] ?? 0) + 1;
+        final idx = locationIndex[locKey] ?? 0;
+        locationIndex[locKey] = idx + 1;
+        // Si hay más de una actividad en la misma localización, aplicar offset
+        LatLng markerPosition = activityLocation;
+        if (locationCount[locKey]! > 1) {
+          // Offset en círculo
+          final double offsetMeters = 25.0 * idx; // 18m de separación
+          final double earthRadius = 6378137.0;
+          final double angle = (2 * pi / locationCount[locKey]!) * idx;
+          final double dLat =
+              (offsetMeters * cos(angle)) / earthRadius * (180 / pi);
+          final double dLng = (offsetMeters * sin(angle)) /
+              (earthRadius * cos(activityLocation.latitude * pi / 180)) *
+              (180 / pi);
+          markerPosition = LatLng(
+            activityLocation.latitude + dLat,
+            activityLocation.longitude + dLng,
+          );
+        }
+        final color = dayColors[(activity.day - 1) % dayColors.length];
+        final BitmapDescriptor customIcon = await createCategoryMarker(
+          activity,
+          _activityIdToPinNumber[activity.id]!,
+          selected: true,
+          baseColor: color,
+        );
+        final markerId = MarkerId('activity_${activity.title}');
+        _activityIdToLatLng[activity.id] = markerPosition;
+        markers.add(
+          Marker(
+            markerId: markerId,
+            position: markerPosition,
+            infoWindow: InfoWindow(
+              title:
+                  '📍 ${_activityIdToPinNumber[activity.id]}. ${activity.title}',
+              snippet: '',
+            ),
+            icon: customIcon,
+            onTap: () => _onMarkerTapped(activity, city, markerId,
+                pinNumber: _activityIdToPinNumber[activity.id]),
+          ),
+        );
+      }
+    }
+    if (hasUpdatedActivities) {
+      await _saveUpdatedActivitiesWithLocations(updatedActivities);
+    }
+    setState(() {
+      _markers = markers;
+    });
+  }
+
+  // NUEVO: Al hacer tap en el marcador, pedir info y mostrar modal
+  void _onMarkerTapped(Activity activity, String city, MarkerId markerId,
+      {int? pinNumber}) async {
+    setState(() {
+      _selectedMarkerId = markerId;
+    });
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      isScrollControlled: true,
+      builder: (context) {
+        return FutureBuilder(
+          future: PlacesService.getPlaceInfo(activity.title, city),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final placeInfo = snapshot.data;
+            if (placeInfo != null &&
+                (placeInfo.rating != null || placeInfo.review != null)) {
+              final bool needsUpdate =
+                  (activity.googleRating != placeInfo.rating) ||
+                      (activity.googleReview != placeInfo.review);
+              if (needsUpdate) {
+                _saveGoogleInfoToFirestore(
+                    activity, placeInfo.rating, placeInfo.review);
+              }
+            }
+            final pinNum =
+                pinNumber ?? _activityIdToPinNumber[activity.id] ?? '';
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.place, color: Colors.blue, size: 28),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '$pinNum. ${activity.title}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (placeInfo != null && placeInfo.rating != null) ...[
+                    Row(
+                      children: [
+                        for (int i = 1; i <= 5; i++)
+                          Icon(
+                            i <= placeInfo.rating!.round()
+                                ? Icons.star
+                                : Icons.star_border,
+                            color: Colors.amber,
+                            size: 28,
+                          ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${placeInfo.rating!.toStringAsFixed(1)} / 5.0',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  if (placeInfo != null && placeInfo.review != null) ...[
+                    Text(
+                      _shortenReview(placeInfo.review!),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 10,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (placeInfo != null && placeInfo.address != null) ...[
+                    Row(
+                      children: [
+                        const Icon(Icons.location_on,
+                            color: Colors.grey, size: 20),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            placeInfo.address!,
+                            style: const TextStyle(
+                                fontSize: 15, color: Colors.grey),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(child: Container()),
+                      if (placeInfo != null && placeInfo.address != null)
+                        ElevatedButton.icon(
+                          icon: const Icon(Icons.map, color: Colors.white),
+                          label: const Text('Ver en Google Maps'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                          ),
+                          onPressed: () async {
+                            final query =
+                                Uri.encodeComponent(placeInfo.address!);
+                            final url =
+                                'https://www.google.com/maps/search/?api=1&query=$query';
+                            if (await canLaunchUrl(Uri.parse(url))) {
+                              await launchUrl(Uri.parse(url),
+                                  mode: LaunchMode.externalApplication);
+                            }
+                          },
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // NUEVO: Al pulsar una actividad en la lista con el mapa abierto, centrar en el pin (sin abrir modal)
+  void _focusOnActivityFromList(Activity activity) async {
+    final latLng = _activityIdToLatLng[activity.id];
+    if (latLng != null && _mapController != null) {
+      await _mapController!
+          .animateCamera(CameraUpdate.newLatLngZoom(latLng, 15.5));
+    }
+  }
+
+  // NUEVO: Guardar rating y review de Google Maps en Firestore
+  Future<void> _saveGoogleInfoToFirestore(
+      Activity activity, double? rating, String? review) async {
+    try {
+      // Buscar el día y la actividad
+      final day = _guide!['days'].firstWhere((d) => (d['activities'] as List)
+          .any((a) => (a as Map<String, dynamic>)['id'] == activity.id));
+      final dayNumber = day['dayNumber'];
+      final activities = (day['activities'] as List).map((a) {
+        if ((a as Map<String, dynamic>)['id'] == activity.id) {
+          final updated = Map<String, dynamic>.from(a);
+          updated['googleRating'] = rating;
+          updated['googleReview'] = review;
+          return updated;
+        }
+        return a;
+      }).toList();
+      await _updateDayActivities(dayNumber, activities);
+      // Actualizar el estado local
+      setState(() {
+        final dayIndex =
+            _guide!['days'].indexWhere((d) => d['dayNumber'] == dayNumber);
+        if (dayIndex != -1) {
+          _guide!['days'][dayIndex]['activities'] = activities;
+        }
+      });
+    } catch (e) {
+      print('Error guardando rating/review de Google Maps: $e');
+    }
+  }
+
+  Future<void> _saveUpdatedActivitiesWithLocations(
+      List<Activity> activities) async {
+    try {
+      // Solo actualizar las coordenadas de las actividades existentes sin cambiar su estructura de días
+      for (final activity in activities) {
+        if (activity.location != null) {
+          // Buscar la actividad en la estructura original de la guía
+          bool found = false;
+          for (final day in _guide!['days']) {
+            if (day['activities'] != null && day['activities'] is List) {
+              final dayActivities = day['activities'] as List;
+              for (int i = 0; i < dayActivities.length; i++) {
+                final existingActivity =
+                    dayActivities[i] as Map<String, dynamic>;
+                if (existingActivity['id'] == activity.id) {
+                  // Solo actualizar las coordenadas sin cambiar otros campos
+                  existingActivity['location'] = {
+                    'latitude': activity.location!.latitude,
+                    'longitude': activity.location!.longitude,
+                  };
+                  // También actualizar rating y review si están disponibles
+                  if (activity.googleRating != null) {
+                    existingActivity['googleRating'] = activity.googleRating;
+                  }
+                  if (activity.googleReview != null) {
+                    existingActivity['googleReview'] = activity.googleReview;
+                  }
+                  found = true;
+                  break;
+                }
+              }
+              if (found) break;
+            }
+          }
+        }
+      }
+
+      // Actualizar cada día en Firestore manteniendo la estructura original
+      for (final day in _guide!['days']) {
+        final dayNumber = day['dayNumber'] as int;
+        final dayActivitiesList = day['activities'] as List;
+        final dayActivities = dayActivitiesList
+            .map((activity) => activity as Map<String, dynamic>)
+            .toList();
+
+        final success = await _updateDayActivities(dayNumber, dayActivities);
+
+        if (success) {
+          print('✅ Día $dayNumber actualizado con coordenadas');
+        } else {
+          print('❌ Error actualizando día $dayNumber');
+        }
+      }
+
+      // El estado local ya está actualizado arriba
+      setState(() {
+        // Trigger rebuild para mostrar los cambios
+      });
+    } catch (e) {
+      print('❌ Error guardando coordenadas: $e');
+    }
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    print('🗺️ Mapa integrado creado exitosamente');
+    _mapController = controller;
+    _mapController!.setMapStyle(_greyRoadsMapStyle);
+
+    // Centrar el mapa después de un breve delay
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (_centerLocation != null && _mapController != null) {
+        print('📍 Centrando mapa integrado en: $_centerLocation');
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(_centerLocation!, 12.0),
+        );
+      }
+    });
+  }
+
+  void _closeMap() {
+    setState(() {
+      _isMapVisible = false;
+      _markers.clear();
+      _polylines.clear();
+      _allActivities.clear();
+    });
+  }
+
+  Widget _buildMapAndGuideLayout({Key? key}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final totalHeight = constraints.maxHeight;
+        // Si la guía ocupa el 100%, ocultar el mapa
+        final bool guiaFullScreen = _mapHeightFraction >= 0.99;
+        final mapHeight =
+            guiaFullScreen ? 0.0 : totalHeight * _mapHeightFraction;
+        return Stack(
+          children: [
+            // Mapa de fondo, altura dinámica (oculto si la guía ocupa el 100%)
+            if (!guiaFullScreen)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: mapHeight,
+                child: _centerLocation != null
+                    ? GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: _centerLocation!,
+                          zoom: 12.0,
+                        ),
+                        markers: _markers,
+                        polylines: _polylines,
+                        myLocationEnabled: false,
+                        myLocationButtonEnabled: false,
+                        mapToolbarEnabled: true,
+                        zoomControlsEnabled: true,
+                        compassEnabled: true,
+                        mapType: MapType.normal,
+                        onMapCreated: _onMapCreated,
+                      )
+                    : Container(color: Colors.grey[200]),
+              ),
+            if (_isMapLoading)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: mapHeight,
+                child: Container(
+                  color: Colors.white.withOpacity(0.8),
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Cargando mapa...'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            // Botón de capas (layers)
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  onPressed: _onLayersButtonPressed,
+                  icon: const Icon(Icons.layers, color: Colors.black),
+                  tooltip: 'Capas: elegir días',
+                ),
+              ),
+            ),
+            // Hoja superpuesta con slider y contenido, justo debajo del mapa
+            Positioned(
+              top: mapHeight,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(16),
+                    topRight: Radius.circular(16),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x26000000), // 15% opacity black
+                      blurRadius: 12,
+                      offset: Offset(0, -4),
+                      spreadRadius: 0,
+                    ),
+                    BoxShadow(
+                      color: Color(0x14000000), // 8% opacity black
+                      blurRadius: 6,
+                      offset: Offset(0, -2),
+                      spreadRadius: 0,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    // Slider (handle) pegado arriba
+                    GestureDetector(
+                      onPanUpdate: (details) {
+                        setState(() {
+                          final min = 0.0;
+                          final max = 1.0;
+                          final newFraction =
+                              (_mapHeightFraction * totalHeight +
+                                      details.delta.dy) /
+                                  totalHeight;
+                          _mapHeightFraction = newFraction.clamp(min, max);
+                          if (_mapHeightFraction <= 0.01) {
+                            _closeMap();
+                            _mapHeightFraction = 0.4;
+                          }
+                        });
+                      },
+                      child: Container(
+                        height: 32,
+                        width: double.infinity,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
+                          ),
+                        ),
+                        child: Center(
+                          child: Container(
+                            width: 50,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade400,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Contenido de la guía
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!_isMapVisible) _buildGuideHeader(),
+                            if (!_isMapVisible) const SizedBox(height: 16),
+                            _buildDaysSection(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _onLayersButtonPressed() async {
+    if (_guide == null || _guide!['days'].isEmpty) return;
+    final allDays =
+        _guide!['days'].map<int>((d) => d['dayNumber'] as int).toSet();
+    final selected = Set<int>.from(_selectedDays);
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Mostrar días en el mapa',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  ..._guide!['days'].map<Widget>((day) {
+                    final dayNumber = day['dayNumber'] as int;
+                    return CheckboxListTile(
+                      value: selected.contains(dayNumber),
+                      title: Text('Día $dayNumber'),
+                      onChanged: (checked) {
+                        setModalState(() {
+                          if (checked == true) {
+                            selected.add(dayNumber);
+                          } else {
+                            selected.remove(dayNumber);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.check),
+                          label: const Text('Aplicar'),
+                          onPressed: () {
+                            Navigator.pop(context, selected);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).then((result) async {
+      if (result is Set<int>) {
+        setState(() {
+          _selectedDays = result;
+          _isMapLoading = true;
+        });
+        await _createMarkersFromActivities();
+        setState(() {
+          _isMapLoading = false;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  // Nuevo: Botón flotante de mapa
+  Widget _buildFloatingMapButton() {
+    if (_isMapVisible) {
+      // Cuando el mapa está visible, el botón de cerrar va en la posición principal del dial
+      return Tooltip(
+        message: 'Cerrar Mapa',
+        child: _buildCircularButton(
+          onTap: _closeMap,
+          size: 54,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFE53935), // Rojo claro
+              Color(0xFFB71C1C), // Rojo oscuro
+            ],
+          ),
+          shadowColor: Colors.red,
+          icon: Icons.close,
+          iconSize: 28,
+        ),
+      );
+    } else {
+      // Cuando el mapa no está visible, el botón de abrir va en posición secundaria
+      return Positioned(
+        bottom: _canEdit
+            ? 62.0
+            : 16.0, // Encima del dial si hay permisos de edición
+        right: 0,
+        child: Tooltip(
+          message: 'Abrir Mapa',
+          child: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.blue,
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(27),
+                onTap: _openGuideMap,
+                child: Center(
+                  child: Icon(
+                    Icons.map,
+                    color: Colors.blue,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  // NUEVO: Limitar la review a un párrafo/corto
+  String _shortenReview(String review) {
+    if (review.length > 900) {
+      return review.substring(0, 897) + '...';
+    }
+    return review;
   }
 }
