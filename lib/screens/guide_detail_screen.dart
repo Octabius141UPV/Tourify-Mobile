@@ -34,6 +34,8 @@ import 'premium_subscription_screen.dart';
 import 'guide_map_screen.dart';
 import '../widgets/travel_agent_chat_widget.dart';
 import '../widgets/premium_feature_modal.dart';
+import '../services/guide_tutorial_service.dart';
+import '../widgets/guide_tutorial_overlay.dart';
 
 // Clase para representar lugares cercanos obtenidos de Google Places API
 class NearbyPlace {
@@ -118,12 +120,18 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   Map<String, LatLng> _activityIdToLatLng = {};
   Map<String, int> _activityIdToPinNumber = {};
 
+  // Variables para el tutorial de guías
+  bool _showGuideTutorial = false;
+
   @override
   void initState() {
     super.initState();
     _loadGuideDetails().then((_) {
       // Cargar permisos DESPUÉS de cargar los detalles de la guía
-      _checkEditPermission();
+      _checkEditPermission().then((_) {
+        // Verificar si mostrar el tutorial DESPUÉS de cargar permisos
+        _checkGuideTutorial();
+      });
     });
   }
 
@@ -170,6 +178,16 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       setState(() {
         _canEdit = false;
         _isOwner = false;
+      });
+    }
+  }
+
+  /// Verifica si debe mostrar el tutorial de guías
+  Future<void> _checkGuideTutorial() async {
+    final shouldShowTutorial = await GuideTutorialService.isFirstGuideOpen();
+    if (shouldShowTutorial && mounted) {
+      setState(() {
+        _showGuideTutorial = true;
       });
     }
   }
@@ -250,78 +268,97 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
         canPop: false,
         onPopInvoked: (didPop) {
           if (!didPop) {
-            _navigateToHome();
+            if (_isMapVisible) {
+              _closeMap();
+            } else {
+              _navigateToHome();
+            }
           }
         },
-        child: Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          appBar: AppBar(
-            title: Text(guideTitle),
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: _navigateToHome,
-              tooltip: 'Volver al inicio',
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.download),
-                onPressed: _downloadGuide,
-                tooltip: 'Descargar guía',
+        child: Stack(
+          children: [
+            Scaffold(
+              backgroundColor: const Color(0xFFF5F5F5),
+              appBar: AppBar(
+                title: Text(guideTitle),
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: _isMapVisible ? _closeMap : _navigateToHome,
+                  tooltip: _isMapVisible ? 'Cerrar mapa' : 'Volver al inicio',
+                ),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.download),
+                    onPressed: _downloadGuide,
+                    tooltip: 'Descargar guía',
+                  ),
+                ],
               ),
-            ],
-          ),
-          body: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 500),
-            transitionBuilder: (child, animation) {
-              // Fade + Slide desde abajo
-              final offsetAnimation = Tween<Offset>(
-                begin: const Offset(0, 0.1),
-                end: Offset.zero,
-              ).animate(animation);
-              return FadeTransition(
-                opacity: animation,
-                child: SlideTransition(
-                  position: offsetAnimation,
-                  child: child,
-                ),
-              );
-            },
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(),
-                    key: ValueKey('loading'))
-                : _guide == null
+              body: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 500),
+                transitionBuilder: (child, animation) {
+                  // Fade + Slide desde abajo
+                  final offsetAnimation = Tween<Offset>(
+                    begin: const Offset(0, 0.1),
+                    end: Offset.zero,
+                  ).animate(animation);
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: offsetAnimation,
+                      child: child,
+                    ),
+                  );
+                },
+                child: _isLoading
                     ? const Center(
-                        child: Text('No se encontró la guía',
-                            key: ValueKey('notfound')))
-                    : _isMapVisible
-                        ? _buildMapAndGuideLayout(key: const ValueKey('map'))
-                        : SingleChildScrollView(
-                            key: const ValueKey('guide'),
-                            padding: const EdgeInsets.all(8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                _buildGuideHeader(),
-                                const SizedBox(height: 16),
-                                _buildDaysSection(),
-                              ],
-                            ),
-                          ),
-          ),
-          floatingActionButton: Stack(
-            alignment: Alignment.bottomRight,
-            children: [
-              if (!_isMapVisible && _canEdit) // dial sólo si puede editar
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: _buildFloatingActionMenu(),
-                ),
-              // Botón flotante de mapa
-              if (!_isMenuExpanded) _buildFloatingMapButton(),
-            ],
-          ),
+                        child: CircularProgressIndicator(),
+                        key: ValueKey('loading'))
+                    : _guide == null
+                        ? const Center(
+                            child: Text('No se encontró la guía',
+                                key: ValueKey('notfound')))
+                        : _isMapVisible
+                            ? _buildMapAndGuideLayout(
+                                key: const ValueKey('map'))
+                            : SingleChildScrollView(
+                                key: const ValueKey('guide'),
+                                padding: const EdgeInsets.all(8),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildGuideHeader(),
+                                    const SizedBox(height: 16),
+                                    _buildDaysSection(),
+                                  ],
+                                ),
+                              ),
+              ),
+              floatingActionButton: Stack(
+                alignment: Alignment.bottomRight,
+                children: [
+                  if (!_isMapVisible && _canEdit) // dial sólo si puede editar
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: _buildFloatingActionMenu(),
+                    ),
+                  // Botón flotante de mapa
+                  if (!_isMenuExpanded) _buildFloatingMapButton(),
+                ],
+              ),
+            ),
+            // Tutorial overlay
+            if (_showGuideTutorial)
+              GuideTutorialOverlay(
+                canEdit: _canEdit,
+                onTutorialCompleted: () {
+                  setState(() {
+                    _showGuideTutorial = false;
+                  });
+                },
+              ),
+          ],
         ),
       ),
     );
@@ -2237,6 +2274,10 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     List<Activity> updatedActivities = [];
     _activityIdToLatLng.clear();
     _activityIdToPinNumber.clear();
+
+    // Definir radio máximo desde el centro de la ciudad (en kilómetros)
+    const double maxDistanceFromCityKm = 50.0; // 50km máximo desde el centro
+
     // Definir colores para los días
     final List<Color> dayColors = [
       Colors.blue,
@@ -2270,6 +2311,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     Map<String, int> locationCount = {};
     Map<String, int> locationIndex = {};
     int geocodingRequests = 0;
+    int activitiesFilteredByDistance = 0;
     for (final activity in orderedActivities) {
       LatLng? activityLocation = activity.location;
 
@@ -2318,6 +2360,23 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
         updatedActivities.add(activity);
       }
       if (activityLocation != null) {
+        // Validar que la actividad no esté demasiado lejos del centro de la ciudad
+        if (_centerLocation != null) {
+          final distanceKm =
+              _calculateDistanceKm(_centerLocation!, activityLocation);
+          if (distanceKm > maxDistanceFromCityKm) {
+            print(
+                '❌ "${activity.title}" está demasiado lejos del centro ($distanceKm km > $maxDistanceFromCityKm km). No se añadirá al mapa.');
+            activitiesFilteredByDistance++;
+            // Añadir a la lista de actividades actualizadas pero sin crear marcador
+            updatedActivities.add(activity);
+            continue; // Saltar esta actividad
+          } else {
+            print(
+                '✅ "${activity.title}" está a $distanceKm km del centro (dentro del rango permitido)');
+          }
+        }
+
         // Generar clave única para la localización
         final locKey =
             '${activityLocation.latitude.toStringAsFixed(6)},${activityLocation.longitude.toStringAsFixed(6)}';
@@ -2375,6 +2434,10 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     print('🔍 Peticiones de geocodificación realizadas: $geocodingRequests');
     print(
         '✅ Actividades con coordenadas reutilizadas: ${orderedActivities.length - geocodingRequests}');
+    if (activitiesFilteredByDistance > 0) {
+      print(
+          '⚠️ Actividades filtradas por distancia (muy lejas): $activitiesFilteredByDistance');
+    }
 
     setState(() {
       _markers = markers;
@@ -2387,6 +2450,10 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     setState(() {
       _selectedMarkerId = markerId;
     });
+
+    // Cargar información adicional en segundo plano
+    final placeInfoFuture = PlacesService.getPlaceInfo(activity.title, city);
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -2394,143 +2461,190 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       ),
       isScrollControlled: true,
       builder: (context) {
-        return FutureBuilder(
-          future: PlacesService.getPlaceInfo(activity.title, city),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            final placeInfo = snapshot.data;
-            if (placeInfo != null &&
-                (placeInfo.rating != null || placeInfo.review != null)) {
-              final bool needsUpdate =
-                  (activity.googleRating != placeInfo.rating) ||
-                      (activity.googleReview != placeInfo.review);
-              if (needsUpdate) {
-                _saveGoogleInfoToFirestore(
-                    activity, placeInfo.rating, placeInfo.review);
-              }
-            }
-            final pinNum =
-                pinNumber ?? _activityIdToPinNumber[activity.id] ?? '';
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+        final pinNum = pinNumber ?? _activityIdToPinNumber[activity.id] ?? '';
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Título del lugar (siempre visible inmediatamente)
+              Row(
                 children: [
-                  // Título del lugar
-                  Row(
-                    children: [
-                      const Icon(Icons.place, color: Colors.blue, size: 28),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          '$pinNum. ${activity.title}',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                  const Icon(Icons.place, color: Colors.blue, size: 28),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '$pinNum. ${activity.title}',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Solo 3 opciones principales
-                  Column(
-                    children: [
-                      // 1. Ver en Google Maps
-                      if (placeInfo != null && placeInfo.address != null)
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.map),
-                            label: const Text('Ver en Google Maps'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: () async {
-                              final query =
-                                  Uri.encodeComponent(placeInfo.address!);
-                              final url =
-                                  'https://www.google.com/maps/search/?api=1&query=$query';
-                              if (await canLaunchUrl(Uri.parse(url))) {
-                                await launchUrl(Uri.parse(url),
-                                    mode: LaunchMode.externalApplication);
-                              }
-                            },
-                          ),
-                        ),
-
-                      const SizedBox(height: 12),
-
-                      // 2. Editar actividad (solo si puede editar)
-                      if (_canEdit)
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.edit),
-                            label: const Text('Editar actividad'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: () {
-                              Navigator.pop(context);
-                              // Buscar la actividad en la estructura de la guía
-                              Map<String, dynamic>? activityData;
-                              for (final day in _guide!['days']) {
-                                final activities = day['activities'] as List;
-                                for (final act in activities) {
-                                  if (act['id'] == activity.id) {
-                                    activityData =
-                                        Map<String, dynamic>.from(act);
-                                    break;
-                                  }
-                                }
-                                if (activityData != null) break;
-                              }
-                              if (activityData != null) {
-                                _editActivity(activityData);
-                              }
-                            },
-                          ),
-                        ),
-
-                      if (_canEdit) const SizedBox(height: 12),
-
-                      // 3. Cerrar
-                      SizedBox(
-                        width: double.infinity,
-                        child: TextButton.icon(
-                          icon: const Icon(Icons.close),
-                          label: const Text('Cerrar'),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ],
               ),
-            );
-          },
+
+              // Mostrar descripción de la actividad si está disponible
+              if (activity.description.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  activity.description,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+
+              // Mostrar rating de Google si ya está guardado
+              if (activity.googleRating != null) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(Icons.star, color: Colors.amber, size: 20),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${activity.googleRating!.toStringAsFixed(1)} / 5.0',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '(Google Maps)',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              const SizedBox(height: 24),
+
+              // Botones de acción
+              Column(
+                children: [
+                  // 1. Eliminar actividad (solo si puede editar)
+                  if (_canEdit)
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.delete),
+                        label: const Text('Eliminar actividad'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Buscar la actividad en la estructura de la guía
+                          Map<String, dynamic>? activityData;
+                          for (final day in _guide!['days']) {
+                            final activities = day['activities'] as List;
+                            for (final act in activities) {
+                              if (act['id'] == activity.id) {
+                                activityData = Map<String, dynamic>.from(act);
+                                break;
+                              }
+                            }
+                            if (activityData != null) break;
+                          }
+                          if (activityData != null) {
+                            _deleteActivity(activityData);
+                          }
+                        },
+                      ),
+                    ),
+
+                  // Actualizar rating en segundo plano
+                  FutureBuilder(
+                    future: placeInfoFuture,
+                    builder: (context, snapshot) {
+                      final placeInfo = snapshot.data;
+                      // Actualizar rating en segundo plano si es necesario
+                      if (placeInfo != null &&
+                          (placeInfo.rating != null ||
+                              placeInfo.review != null)) {
+                        final bool needsUpdate =
+                            (activity.googleRating != placeInfo.rating) ||
+                                (activity.googleReview != placeInfo.review);
+                        if (needsUpdate) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _saveGoogleInfoToFirestore(
+                                activity, placeInfo.rating, placeInfo.review);
+                          });
+                        }
+                      }
+                      return const SizedBox.shrink(); // No mostrar nada
+                    },
+                  ),
+
+                  // 2. Editar actividad (solo si puede editar)
+                  if (_canEdit) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Editar actividad'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          // Buscar la actividad en la estructura de la guía
+                          Map<String, dynamic>? activityData;
+                          for (final day in _guide!['days']) {
+                            final activities = day['activities'] as List;
+                            for (final act in activities) {
+                              if (act['id'] == activity.id) {
+                                activityData = Map<String, dynamic>.from(act);
+                                break;
+                              }
+                            }
+                            if (activityData != null) break;
+                          }
+                          if (activityData != null) {
+                            _editActivity(activityData);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+
+                  // 3. Cerrar
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.close),
+                      label: const Text('Cerrar'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -2664,6 +2778,26 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     });
   }
 
+  /// Calcula la distancia en kilómetros entre dos coordenadas usando la fórmula de Haversine
+  double _calculateDistanceKm(LatLng point1, LatLng point2) {
+    const double earthRadiusKm = 6371.0;
+
+    final double lat1Rad = point1.latitude * (pi / 180);
+    final double lat2Rad = point2.latitude * (pi / 180);
+    final double deltaLatRad = (point2.latitude - point1.latitude) * (pi / 180);
+    final double deltaLngRad =
+        (point2.longitude - point1.longitude) * (pi / 180);
+
+    final double a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
+        cos(lat1Rad) *
+            cos(lat2Rad) *
+            sin(deltaLngRad / 2) *
+            sin(deltaLngRad / 2);
+    final double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+
+    return earthRadiusKm * c;
+  }
+
   Widget _buildMapAndGuideLayout({Key? key}) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2795,7 +2929,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                   children: [
                     // Handle minimalista que NO intercepta gestos del mapa
                     Container(
-                      height: 20,
+                      height: 30,
                       width: double.infinity,
                       color: Colors.transparent,
                       child: Stack(
@@ -2821,16 +2955,16 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                                 });
                               },
                               child: Container(
-                                width: 60, // Solo 60px de ancho para arrastrar
-                                height: 20,
+                                width: 150, // Área táctil más grande
+                                height: 30,
                                 color: Colors.transparent,
                                 child: Center(
                                   child: Container(
-                                    width: 50,
-                                    height: 4,
+                                    width: 200, // Handle visual más grande
+                                    height: 6,
                                     decoration: BoxDecoration(
                                       color: Colors.grey.shade400,
-                                      borderRadius: BorderRadius.circular(2),
+                                      borderRadius: BorderRadius.circular(3),
                                     ),
                                   ),
                                 ),
@@ -2946,25 +3080,8 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   // Nuevo: Botón flotante de mapa
   Widget _buildFloatingMapButton() {
     if (_isMapVisible) {
-      // Cuando el mapa está visible, el botón de cerrar va en la posición principal del dial
-      return Tooltip(
-        message: 'Cerrar Mapa',
-        child: _buildCircularButton(
-          onTap: _closeMap,
-          size: 54,
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFE53935), // Rojo claro
-              Color(0xFFB71C1C), // Rojo oscuro
-            ],
-          ),
-          shadowColor: Colors.red,
-          icon: Icons.close,
-          iconSize: 28,
-        ),
-      );
+      // Cuando el mapa está visible, no mostrar ningún botón flotante
+      return const SizedBox.shrink();
     } else {
       // Cuando el mapa no está visible, el botón de abrir va en posición secundaria
       return Positioned(
@@ -2999,7 +3116,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                 onTap: _openGuideMap,
                 child: Center(
                   child: Icon(
-                    Icons.map,
+                    Icons.map_rounded,
                     color: Colors.blue,
                     size: 28,
                   ),

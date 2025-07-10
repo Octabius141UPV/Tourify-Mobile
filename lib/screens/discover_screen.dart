@@ -59,9 +59,14 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       false; // Esperando más actividades del stream
   int _activitiesCountWhenWaiting =
       0; // Cuántas actividades había cuando empezamos a esperar
+  bool _isCreatingGuide =
+      false; // Estado de carga cuando se está creando la guía
 
   // Set para trackear actividades ya evaluadas (por ID único)
   Set<String> _evaluatedActivityIds = <String>{};
+
+  // Map para trackear el estado expandido de las descripciones
+  Map<String, bool> _expandedDescriptions = <String, bool>{};
 
   @override
   void initState() {
@@ -162,6 +167,11 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       return;
     }
 
+    // Mostrar estado de carga
+    setState(() {
+      _isCreatingGuide = true;
+    });
+
     try {
       // Create authenticated guide
       final guideId = await DiscoverService.createGuide(
@@ -191,6 +201,12 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     } finally {
       // Asegurar que las actividades se limpien siempre, incluso si hay error
       DiscoverService.reset();
+      // Resetear estado de carga
+      if (mounted) {
+        setState(() {
+          _isCreatingGuide = false;
+        });
+      }
     }
   }
 
@@ -203,6 +219,11 @@ class _DiscoverScreenState extends State<DiscoverScreen>
       return;
     }
 
+    // Mostrar estado de carga
+    setState(() {
+      _isCreatingGuide = true;
+    });
+
     try {
       // Create authenticated guide
       final guideId = await DiscoverService.createGuide(
@@ -232,6 +253,12 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     } finally {
       // Asegurar que las actividades se limpien siempre, incluso si hay error
       DiscoverService.reset();
+      // Resetear estado de carga
+      if (mounted) {
+        setState(() {
+          _isCreatingGuide = false;
+        });
+      }
     }
   }
 
@@ -371,6 +398,50 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         });
       });
     });
+  }
+
+  // Mostrar diálogo de confirmación para salir
+  void _showExitDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.exit_to_app, color: Colors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: const Text('Salir del descubrimiento'),
+              ),
+            ],
+          ),
+          content: const Text(
+            '¿Estás seguro de que quieres salir? Perderás el progreso actual de descubrimiento.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              onPressed: () {
+                // Limpiar actividades cuando el usuario confirme salir
+                DiscoverService.reset();
+                Navigator.of(context).pop(); // Close dialog
+                Navigator.of(context).pop(); // Close discover screen
+              },
+              child: const Text(
+                'Salir',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // Filtrar actividades para mostrar solo las no evaluadas (método original como fallback)
@@ -538,6 +609,11 @@ class _DiscoverScreenState extends State<DiscoverScreen>
           ),
         ),
       );
+    }
+
+    // Si se está creando la guía, mostrar estado de carga
+    if (_isCreatingGuide) {
+      return _buildCreatingGuideInterface();
     }
 
     return StreamBuilder<List<Activity>>(
@@ -758,6 +834,102 @@ class _DiscoverScreenState extends State<DiscoverScreen>
     );
   }
 
+  Widget _buildCreatingGuideInterface() {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        automaticallyImplyLeading: false,
+        title: const Text(
+          'Creando tu guía...',
+          style: TextStyle(
+            color: Colors.black87,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const CircularProgressIndicator(
+                strokeWidth: 6,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+              ),
+            ),
+            const SizedBox(height: 32),
+            const Text(
+              '✨ Creando tu guía personalizada',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Estamos organizando tus ${DiscoverService.acceptedActivities.length} actividades seleccionadas...',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 32),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              margin: const EdgeInsets.symmetric(horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.green.withOpacity(0.3),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green, size: 24),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${DiscoverService.acceptedActivities.length} actividades confirmadas',
+                        style: const TextStyle(
+                          color: Colors.green,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tu guía estará lista en unos momentos',
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildWaitingForMoreActivitiesInterface() {
     return Scaffold(
       backgroundColor: Colors.white,
@@ -767,50 +939,12 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         automaticallyImplyLeading: false,
         leading: IconButton(
           icon: Icon(
-            Icons.close,
-            color: Colors.grey[600],
-            size: 28,
+            Icons.arrow_back,
+            color: Colors.grey[700],
+            size: 24,
           ),
           onPressed: () {
-            showDialog(
-              context: context,
-              builder: (BuildContext context) {
-                return AlertDialog(
-                  title: Row(
-                    children: [
-                      Icon(Icons.exit_to_app, color: Colors.red),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: const Text('Salir del descubrimiento'),
-                      ),
-                    ],
-                  ),
-                  content: const Text(
-                    '¿Estás seguro de que quieres salir? Perderás el progreso actual de descubrimiento.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancelar'),
-                    ),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                      ),
-                      onPressed: () {
-                        DiscoverService.reset();
-                        Navigator.of(context).pop(); // Close dialog
-                        Navigator.of(context).pop(); // Close discover screen
-                      },
-                      child: const Text(
-                        'Salir',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
+            _showExitDialog(context);
           },
         ),
         title: Column(
@@ -1027,111 +1161,29 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
     // SOLUCIÓN CRÍTICA: Usar la longitud de activities como key para forzar rebuild del CardSwiper
     // Esto evita problemas de índices cuando la lista filtrada cambia de tamaño
-    final cardSwiperKey =
-        Key('card_swiper_${activities.length}_${_evaluatedActivityIds.length}');
+    // Incluir el hash de los IDs evaluados para detectar cambios por undo
+    final cardSwiperKey = Key(
+        'card_swiper_${activities.length}_${_evaluatedActivityIds.length}_${_evaluatedActivityIds.hashCode}');
 
     return WillPopScope(
       onWillPop: () async {
-        // Mostrar el mismo diálogo de confirmación que el botón X
-        bool shouldExit = false;
-        await showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.exit_to_app, color: Colors.red),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: const Text('Salir del descubrimiento'),
-                  ),
-                ],
-              ),
-              content: const Text(
-                '¿Estás seguro de que quieres salir? Perderás el progreso actual de descubrimiento.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    shouldExit = false;
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Cancelar'),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                  ),
-                  onPressed: () {
-                    shouldExit = true;
-                    // Limpiar actividades cuando el usuario confirme salir
-                    DiscoverService.reset();
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text(
-                    'Salir',
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-        return shouldExit;
+        _showExitDialog(context);
+        return false; // Prevenir el pop automático, el diálogo maneja la navegación
       },
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
           elevation: 0,
           backgroundColor: Colors.white,
-          automaticallyImplyLeading: false,
+          automaticallyImplyLeading: true,
           leading: IconButton(
             icon: Icon(
-              Icons.close,
-              color: Colors.grey[600],
-              size: 28,
+              Icons.arrow_back,
+              color: Colors.grey[700],
+              size: 24,
             ),
             onPressed: () {
-              showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return AlertDialog(
-                    title: Row(
-                      children: [
-                        Icon(Icons.exit_to_app, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: const Text('Salir del descubrimiento'),
-                        ),
-                      ],
-                    ),
-                    content: const Text(
-                      '¿Estás seguro de que quieres salir? Perderás el progreso actual de descubrimiento.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('Cancelar'),
-                      ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                        ),
-                        onPressed: () {
-                          // Limpiar actividades cuando el usuario confirme salir
-                          DiscoverService.reset();
-                          Navigator.of(context).pop(); // Close dialog
-                          Navigator.of(context).pop(); // Close discover screen
-                        },
-                        child: const Text(
-                          'Salir',
-                          style: TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              );
+              _showExitDialog(context);
             },
           ),
           title: Column(
@@ -1155,12 +1207,16 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                   child: AnimatedBuilder(
                     animation: _progressAnimation,
                     builder: (context, child) {
+                      // Calcular progreso real basado en actividades evaluadas vs total disponible
+                      final totalEvaluated = _evaluatedActivityIds.length;
+                      final totalAvailable = allActivities.length;
+
                       // Verificar que las animaciones estén inicializadas
                       if (!mounted) {
                         return LinearProgressIndicator(
-                          value: activities.isEmpty
+                          value: totalAvailable == 0
                               ? 0.0
-                              : (_currentIndex / activities.length)
+                              : (totalEvaluated / totalAvailable)
                                   .clamp(0.0, 1.0),
                           backgroundColor: Colors.transparent,
                           valueColor:
@@ -1169,20 +1225,24 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                         );
                       }
 
-                      final baseProgress = activities.isEmpty
+                      // Progreso base real: actividades evaluadas / total disponible
+                      final baseProgress = totalAvailable == 0
                           ? 0.0
-                          : (_currentIndex / activities.length).clamp(0.0, 1.0);
+                          : (totalEvaluated / totalAvailable).clamp(0.0, 1.0);
+
+                      // Pequeño efecto de pulso cuando se evalúa una actividad
                       final animatedProgress = baseProgress +
-                          (_progressAnimation.value *
-                              0.1); // Pequeño efecto de pulso
+                          (_progressAnimation.value * 0.05); // Efecto más sutil
 
                       return LinearProgressIndicator(
                         value: animatedProgress.clamp(0.0, 1.0),
                         backgroundColor: Colors.transparent,
                         valueColor: AlwaysStoppedAnimation<Color>(
-                            _progressAnimation.value > 0.5
+                            _progressAnimation.value > 0.3
                                 ? Colors.green // Color de éxito cuando se anima
-                                : Colors.blue // Color normal
+                                : baseProgress > 0.8
+                                    ? Colors.orange // Cerca del final
+                                    : Colors.blue // Color normal
                             ),
                         minHeight: 8,
                       );
@@ -1307,7 +1367,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                                                               width: 8),
                                                           Expanded(
                                                             child: Text(
-                                                              '${(activities.length - _currentIndex).clamp(0, activities.length)} actividades se añadirán',
+                                                              '${(allActivities.length - _evaluatedActivityIds.length).clamp(0, allActivities.length)} actividades se añadirán',
                                                               style: TextStyle(
                                                                 fontWeight:
                                                                     FontWeight
@@ -1337,7 +1397,7 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                                                   const SizedBox(width: 8),
                                                   Expanded(
                                                     child: Text(
-                                                      'Total: ${DiscoverService.acceptedActivities.length + (includeRemaining && (activities.length - _currentIndex).clamp(0, activities.length) > 0 ? (activities.length - _currentIndex).clamp(0, activities.length) : 0)} actividades',
+                                                      'Total: ${DiscoverService.acceptedActivities.length + (includeRemaining && (allActivities.length - _evaluatedActivityIds.length).clamp(0, allActivities.length) > 0 ? (allActivities.length - _evaluatedActivityIds.length).clamp(0, allActivities.length) : 0)} actividades',
                                                       style: TextStyle(
                                                         color: Colors.blue,
                                                         fontWeight:
@@ -1365,8 +1425,11 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                                           // Agregar automáticamente las actividades restantes solo si la opción está marcada
                                           if (includeRemaining) {
                                             final remainingActivities =
-                                                activities
-                                                    .skip(_currentIndex)
+                                                allActivities
+                                                    .where((activity) =>
+                                                        !_evaluatedActivityIds
+                                                            .contains(
+                                                                activity.id))
                                                     .toList();
                                             if (remainingActivities
                                                 .isNotEmpty) {
@@ -1772,14 +1835,74 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                                             ),
                                           ),
                                           const SizedBox(height: 8),
-                                          Text(
-                                            activity.description,
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              color: Colors.white,
-                                            ),
-                                            maxLines: 3,
-                                            overflow: TextOverflow.ellipsis,
+                                          StatefulBuilder(
+                                            builder:
+                                                (context, setDescriptionState) {
+                                              final description =
+                                                  activity.description;
+                                              final isLongDescription =
+                                                  description.length > 120;
+                                              final isExpanded =
+                                                  _expandedDescriptions[
+                                                          activity.id] ??
+                                                      false;
+
+                                              return GestureDetector(
+                                                onTap: isLongDescription
+                                                    ? () {
+                                                        setState(() {
+                                                          _expandedDescriptions[
+                                                                  activity.id] =
+                                                              !isExpanded;
+                                                        });
+                                                      }
+                                                    : null,
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    AnimatedSize(
+                                                      duration: const Duration(
+                                                          milliseconds: 300),
+                                                      curve: Curves.easeInOut,
+                                                      child: Text(
+                                                        description,
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
+                                                          color: Colors.white,
+                                                        ),
+                                                        maxLines: isExpanded
+                                                            ? null
+                                                            : 3,
+                                                        overflow: isExpanded
+                                                            ? TextOverflow
+                                                                .visible
+                                                            : TextOverflow
+                                                                .ellipsis,
+                                                      ),
+                                                    ),
+                                                    if (isLongDescription) ...[
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        isExpanded
+                                                            ? 'Ver menos'
+                                                            : 'Ver más',
+                                                        style: TextStyle(
+                                                          fontSize: 14,
+                                                          color: Colors.white
+                                                              .withOpacity(0.8),
+                                                          fontWeight:
+                                                              FontWeight.w500,
+                                                          decoration:
+                                                              TextDecoration
+                                                                  .underline,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              );
+                                            },
                                           ),
                                         ],
                                       ),
@@ -1927,20 +2050,31 @@ class _DiscoverScreenState extends State<DiscoverScreen>
                                       DiscoverService.undoLastAction();
 
                                   if (undoneActivity != null) {
-                                    // Animar el undo en la UI
-                                    controller.undo();
+                                    print(
+                                        '🔄 Undo para actividad: ${undoneActivity.name} (ID: ${undoneActivity.id})');
 
                                     setState(() {
+                                      // CRÍTICO: Remover la actividad del set de evaluadas para que vuelva a aparecer
+                                      _evaluatedActivityIds
+                                          .remove(undoneActivity.id);
+
+                                      // Ajustar el índice actual para mostrar la actividad que vuelve
                                       if (_currentIndex > 0) {
                                         _currentIndex--;
                                       }
                                     });
+
+                                    // Animar el undo en la UI
+                                    controller.undo();
 
                                     // Mostrar feedback visual para undo
                                     _showUndoVisualFeedback();
 
                                     // Haptic feedback
                                     HapticFeedback.lightImpact();
+
+                                    print(
+                                        '✅ Actividad ${undoneActivity.name} restaurada. Evaluadas ahora: ${_evaluatedActivityIds.length}');
                                   }
                                 }
                               : null,

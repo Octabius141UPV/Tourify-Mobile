@@ -5,6 +5,9 @@ import 'package:tourify_flutter/services/auth_service.dart';
 import 'package:tourify_flutter/services/user_service.dart';
 import 'package:tourify_flutter/screens/login_screen.dart';
 import 'package:tourify_flutter/services/navigation_service.dart';
+import 'package:tourify_flutter/services/onboarding_service.dart';
+import 'package:tourify_flutter/services/guide_tutorial_service.dart';
+import 'package:tourify_flutter/screens/onboarding_screen.dart';
 import '../widgets/common/custom_bottom_navigation_bar.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -133,6 +136,185 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _showOnboarding() async {
+    // Mostrar diálogo de confirmación
+    final bool? shouldShowOnboarding = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.help_outline,
+                color: Colors.blue,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Ver tutorial'),
+          ],
+        ),
+        content: const Text(
+          '¿Quieres revisar el tutorial de Tourify?\n\nEsto te mostrará las características principales de la aplicación.',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Ver tutorial',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldShowOnboarding == true) {
+      // Navegar al onboarding
+      Navigator.of(context).push(
+        PageRouteBuilder(
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              const OnboardingScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            const begin = Offset(1.0, 0.0);
+            const end = Offset.zero;
+            const curve = Curves.easeInOut;
+
+            var tween = Tween(begin: begin, end: end).chain(
+              CurveTween(curve: curve),
+            );
+
+            return SlideTransition(
+              position: animation.drive(tween),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 500),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showGuideTutorial() async {
+    // Mostrar diálogo de confirmación
+    final bool? shouldShowTutorial = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.map_outlined,
+                color: Colors.green,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Text('Tutorial de guías'),
+          ],
+        ),
+        content: const Text(
+          '¿Quieres revisar el tutorial de guías?\n\nEsto te mostrará todas las funcionalidades disponibles cuando entres a una guía (editar, añadir actividades, ver mapa, etc.).',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancelar',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text(
+              'Ver tutorial',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldShowTutorial == true) {
+      // Resetear el tutorial de guías para que se muestre la próxima vez
+      await GuideTutorialService.resetGuideTutorial();
+
+      // Mostrar mensaje de confirmación
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Tutorial activado. Verás el tutorial la próxima vez que entres a una guía.',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -657,6 +839,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
+                              onPressed: _showOnboarding,
+                              icon: const Icon(Icons.help_outline,
+                                  color: Colors.blue),
+                              label: const Text('Ver tutorial inicial',
+                                  style: TextStyle(color: Colors.blue)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.blue),
+                                foregroundColor: Colors.blue,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _showGuideTutorial,
+                              icon: const Icon(Icons.map_outlined,
+                                  color: Colors.green),
+                              label: const Text('Tutorial de guías',
+                                  style: TextStyle(color: Colors.green)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.green),
+                                foregroundColor: Colors.green,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
                               onPressed: _handleLogout,
                               icon: const Icon(Icons.logout, color: Colors.red),
                               label: const Text('Cerrar sesión',
@@ -674,6 +892,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                     ),
                   ),
+                  // Opciones para resetear tutoriales (solo en modo debug)
+                  if (const bool.fromEnvironment('dart.vm.product') ==
+                      false) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Center(
+                        child: TextButton(
+                          onPressed: () async {
+                            await OnboardingService.resetOnboarding();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Tutorial inicial reseteado - reinicia la app para verlo'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            'Resetear tutorial inicial (Debug)',
+                            style: TextStyle(
+                                color: Colors.orange,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                decoration: TextDecoration.underline),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Center(
+                        child: TextButton(
+                          onPressed: () async {
+                            await GuideTutorialService.resetGuideTutorial();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Tutorial de guías reseteado - se mostrará la próxima vez que entres a una guía'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          },
+                          child: const Text(
+                            'Resetear tutorial de guías (Debug)',
+                            style: TextStyle(
+                                color: Colors.green,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                decoration: TextDecoration.underline),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   // Botón eliminar cuenta minimalista
                   Padding(
                     padding: const EdgeInsets.only(top: 8, bottom: 8),

@@ -18,6 +18,7 @@ import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/my_guides_screen.dart';
 import 'screens/guide_detail_screen.dart';
+import 'screens/app_wrapper.dart';
 import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'package:flutter/rendering.dart';
@@ -193,7 +194,7 @@ class _MyAppState extends State<MyApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('es', 'ES')],
-      home: const HomeScreen(),
+      home: const AppWrapper(),
       onGenerateRoute: (settings) {
         // Configurar rutas con transiciones personalizadas
         Widget page;

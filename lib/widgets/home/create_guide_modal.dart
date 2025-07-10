@@ -24,16 +24,11 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
   Set<String> _selectedModes = <String>{};
   final TextEditingController _destinationSearchController =
       TextEditingController();
-  final TextEditingController _guideNameController = TextEditingController();
-  final TextEditingController _guideDescriptionController =
-      TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   @override
   void dispose() {
     _destinationSearchController.dispose();
-    _guideNameController.dispose();
-    _guideDescriptionController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -99,110 +94,8 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
   }
 
   Widget _buildWhatSection() {
-    final bool isInactive = _activeSection != null && _activeSection != 'what';
-
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          _activeSection = _activeSection == 'what' ? null : 'what';
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.ease,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: isInactive ? Colors.grey[100] : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isInactive ? 0.03 : 0.07),
-              blurRadius: 16,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.edit_outlined,
-                    color: isInactive ? Colors.grey[400] : Colors.black,
-                    size: 28),
-                const SizedBox(width: 10),
-                Text(
-                  '¿Cómo se llama tu guía?',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: isInactive ? Colors.grey[600] : Colors.black,
-                  ),
-                ),
-              ],
-            ),
-            if (_activeSection == 'what') ...[
-              const SizedBox(height: 18),
-              // Campo de nombre
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: TextField(
-                  controller: _guideNameController,
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    hintText: _selectedCity != null
-                        ? 'Viaje a $_selectedCity'
-                        : 'Selecciona primero un destino',
-                    hintStyle:
-                        const TextStyle(fontSize: 16, color: Colors.grey),
-                    contentPadding: const EdgeInsets.symmetric(
-                        vertical: 16, horizontal: 16),
-                  ),
-                  style: const TextStyle(fontSize: 16),
-                  onChanged: (value) {
-                    // No hay auto-navegación porque esta es la última sección
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Campo de descripción
-              Text(
-                'Descripción (opcional)',
-                style: TextStyle(
-                  fontWeight: FontWeight.w500,
-                  color: isInactive ? Colors.grey[500] : Colors.black87,
-                  fontSize: 16,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: TextField(
-                  controller: _guideDescriptionController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    hintText: 'Describe brevemente tu viaje...',
-                    hintStyle: TextStyle(fontSize: 16, color: Colors.grey),
-                    contentPadding:
-                        EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-                  ),
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+    // Sección simplificada sin campos de entrada
+    return const SizedBox.shrink(); // No mostrar nada
   }
 
   Widget _buildWhereSection() {
@@ -284,9 +177,6 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                             prediction.description!;
                         setState(() {
                           _selectedCity = prediction.description;
-                          // Generar nombre por defecto basado en el destino
-                          _guideNameController.text =
-                              'Viaje a ${prediction.description}';
                         });
                         FocusScope.of(context).unfocus();
                         // Auto-abrir sección de fechas cuando se selecciona un destino
@@ -299,9 +189,6 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                             prediction.description!;
                         setState(() {
                           _selectedCity = prediction.description;
-                          // Generar nombre por defecto basado en el destino
-                          _guideNameController.text =
-                              'Viaje a ${prediction.description}';
                         });
                         FocusScope.of(context).unfocus();
                         // Auto-abrir sección de fechas cuando se selecciona un destino
@@ -365,8 +252,6 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
         _destinationSearchController.text = title;
         setState(() {
           _selectedCity = title;
-          // Generar nombre por defecto basado en el destino
-          _guideNameController.text = 'Viaje a $title';
           FocusScope.of(context).unfocus();
         });
         // Auto-abrir sección de fechas cuando se selecciona un destino
@@ -951,7 +836,7 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
   Widget _buildBottomButtons() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-      child: _activeSection == 'what'
+      child: (_activeSection == 'how' || _activeSection == null)
           ? _buildFinalButtons()
           : Row(
               children: [
@@ -969,8 +854,6 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                           _goToSection('when');
                         } else if (_activeSection == 'when') {
                           _goToSection('how');
-                        } else if (_activeSection == 'how') {
-                          _goToSection('what');
                         }
                       },
                       icon:
@@ -1056,9 +939,8 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                           endDate: _endDate,
                           travelers: _travelersCount,
                           travelModes: _selectedModes.toList(),
-                          guideName: _guideNameController.text.trim(),
-                          guideDescription:
-                              _guideDescriptionController.text.trim(),
+                          guideName: null, // Generación automática
+                          guideDescription: null, // Sin descripción
                         ),
                         transitionDuration: Duration.zero,
                         reverseTransitionDuration: Duration.zero,
@@ -1144,17 +1026,6 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
         _goToSection('when');
         return false;
       }
-    }
-
-    if (_guideNameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Por favor, escribe un nombre para tu guía'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      _goToSection('what');
-      return false;
     }
 
     return true;
