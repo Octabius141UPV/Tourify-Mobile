@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io' show Platform;
 import '../config/app_colors.dart';
 import '../utils/safe_area_helper.dart';
+import '../services/analytics_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -123,10 +124,24 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted && userCredential.user != null) {
         print('Login exitoso: ${userCredential.user?.email}');
 
+        // Registrar login exitoso en Analytics
+        AnalyticsService.trackLogin('email_password');
+        AnalyticsService.setUserProperties(
+          userId: userCredential.user!.uid,
+          userType: 'authenticated',
+        );
+
         // Verificar si el email está verificado
         await userCredential.user!.reload();
         if (!userCredential.user!.emailVerified) {
           print('❌ Email no verificado, redirigiendo a VerifyEmailScreen');
+
+          // Registrar evento de email no verificado
+          AnalyticsService.trackEvent('email_verification_required',
+              parameters: {
+                'user_id': userCredential.user!.uid,
+                'email': userCredential.user!.email ?? 'unknown',
+              });
 
           Navigator.pushAndRemoveUntil(
             context,
@@ -177,12 +192,25 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on FirebaseAuthException catch (e) {
       print('Error en login: ${e.code}');
+
+      // Registrar error de login en Analytics
+      AnalyticsService.trackEvent('login_failed', parameters: {
+        'method': 'email_password',
+        'error_code': e.code,
+        'error_message': e.message ?? 'unknown',
+      });
+
       setState(() {
         _error = _firebaseErrorMessages[e.code] ??
             'Error desconocido al iniciar sesión.';
       });
     } catch (e) {
       print('Error en login: $e');
+
+      // Registrar error general en Analytics
+      AnalyticsService.trackError(
+          'Login general error: ${e.toString()}', 'LoginScreen._handleLogin');
+
       setState(() {
         _error = 'Error desconocido al iniciar sesión.';
       });
@@ -206,6 +234,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted && userCredential?.user != null) {
         print('Login con Google exitoso: ${userCredential?.user?.email}');
+
+        // Registrar login exitoso con Google
+        AnalyticsService.trackLogin('google');
+        AnalyticsService.setUserProperties(
+          userId: userCredential!.user!.uid,
+          userType: 'authenticated',
+        );
+
         Navigator.pushAndRemoveUntil(
           context,
           PageRouteBuilder(
@@ -219,6 +255,13 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       print('Error en login con Google: $e');
+
+      // Registrar error en login con Google
+      AnalyticsService.trackEvent('login_failed', parameters: {
+        'method': 'google',
+        'error_message': e.toString(),
+      });
+
       setState(() {
         _error = 'Error al iniciar sesión con Google.';
       });
@@ -242,6 +285,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (mounted && userCredential?.user != null) {
         print('Login con Apple exitoso: ${userCredential?.user?.email}');
+
+        // Registrar login exitoso con Apple
+        AnalyticsService.trackLogin('apple');
+        AnalyticsService.setUserProperties(
+          userId: userCredential!.user!.uid,
+          userType: 'authenticated',
+        );
+
         Navigator.pushAndRemoveUntil(
           context,
           PageRouteBuilder(
@@ -255,6 +306,13 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } catch (e) {
       print('Error en login con Apple: $e');
+
+      // Registrar error en login con Apple
+      AnalyticsService.trackEvent('login_failed', parameters: {
+        'method': 'apple',
+        'error_message': e.toString(),
+      });
+
       setState(() {
         _error = 'Error al iniciar sesión con Apple.';
       });
@@ -327,6 +385,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (mounted && userCredential.user != null) {
           print('🎉 Login con Face ID exitoso: ${userCredential.user?.email}');
+
+          // Registrar login exitoso con biometría
+          AnalyticsService.trackLogin('biometric');
+          AnalyticsService.setUserProperties(
+            userId: userCredential.user!.uid,
+            userType: 'authenticated',
+          );
+
           Navigator.pushAndRemoveUntil(
             context,
             PageRouteBuilder(
@@ -344,12 +410,28 @@ class _LoginScreenState extends State<LoginScreen> {
     } on FirebaseAuthException catch (e) {
       print(
           '❌ Error de Firebase en login con Face ID: ${e.code} - ${e.message}');
+
+      // Registrar error de Firebase en biometría
+      AnalyticsService.trackEvent('login_failed', parameters: {
+        'method': 'biometric',
+        'error_type': 'firebase_auth',
+        'error_code': e.code,
+        'error_message': e.message ?? 'unknown',
+      });
+
       setState(() {
         _error = _firebaseErrorMessages[e.code] ??
             'Error al iniciar sesión: ${e.message}';
       });
     } catch (e) {
       print('❌ Error en autenticación biométrica: $e');
+
+      // Registrar error en biometría
+      AnalyticsService.trackEvent('login_failed', parameters: {
+        'method': 'biometric',
+        'error_type': 'biometric_auth',
+        'error_message': e.toString(),
+      });
 
       // Manejo específico de errores de local_auth
       String errorMessage = 'Error en autenticación biométrica.';

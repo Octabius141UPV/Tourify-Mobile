@@ -10,6 +10,8 @@ import 'config/firebase_config.dart';
 import 'config/app_colors.dart';
 import 'services/navigation_service.dart';
 import 'services/auth_service.dart';
+import 'services/analytics_service.dart';
+import 'services/navigation_observer.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/verify_email_screen.dart';
@@ -36,6 +38,9 @@ void main() async {
       await Firebase.initializeApp(options: firebaseOptions);
       debugPrint('Firebase inicializado correctamente');
     }
+
+    // Inicializar servicio de analytics
+    await AnalyticsService.initialize();
 
     // Configurar Microsoft Clarity
     final clarityProjectId = dotenv.env['CLARITY_PROJECT_ID'];
@@ -163,6 +168,9 @@ class _MyAppState extends State<MyApp> {
       title: 'Tourify',
       debugShowCheckedModeBanner: false,
       navigatorKey: NavigationService.navigatorKey,
+      navigatorObservers: [
+        AnalyticsNavigatorObserver(), // Tracking automático de navegación
+      ],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.primary,
