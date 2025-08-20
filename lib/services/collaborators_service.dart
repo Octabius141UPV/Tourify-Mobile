@@ -291,15 +291,25 @@ class CollaboratorsService {
         final String currentUserId = user.uid;
         final String? currentUserEmail = user.email;
 
-        // Verificar también si hay colaboradores en subcolección
+        // 0. Verificar subcolección por UID (alineado con reglas de seguridad)
         try {
-          final collaboratorsSubcollection = await _firestore
+          final collByUid = await _firestore
               .collection('guides')
               .doc(guideId)
               .collection('collaborators')
+              .doc(currentUserId)
               .get();
+          if (collByUid.exists) {
+            final role = (collByUid.data() ?? const {})['role'] ?? 'viewer';
+            return {
+              'success': true,
+              'role': role,
+              'canEdit': role == 'editor',
+              'isOwner': false,
+            };
+          }
         } catch (e) {
-          // Error silencioso
+          // Silencioso
         }
 
         // Verificar si es el propietario - 3 formas diferentes:
@@ -338,9 +348,8 @@ class CollaboratorsService {
           };
         }
 
-        // Verificar en colaboradores - TANTO en array como en subcolección
+        // 1. Verificar en array legacy por email (compatibilidad)
         if (currentUserEmail != null) {
-          // 1. Verificar en el array principal
           final collaborator = collaborators.firstWhere(
             (collab) => collab['email'] == currentUserEmail,
             orElse: () => null,
@@ -354,31 +363,6 @@ class CollaboratorsService {
               'canEdit': role == 'editor',
               'isOwner': false,
             };
-          }
-
-          // 2. Si no está en el array, verificar en la subcolección
-          try {
-            final collaboratorsSubcollection = await _firestore
-                .collection('guides')
-                .doc(guideId)
-                .collection('collaborators')
-                .where('email', isEqualTo: currentUserEmail)
-                .limit(1)
-                .get();
-
-            if (collaboratorsSubcollection.docs.isNotEmpty) {
-              final subcollectionData =
-                  collaboratorsSubcollection.docs.first.data();
-              final String role = subcollectionData['role'] ?? 'viewer';
-              return {
-                'success': true,
-                'role': role,
-                'canEdit': role == 'editor',
-                'isOwner': false,
-              };
-            }
-          } catch (e) {
-            // Error silencioso
           }
         }
 

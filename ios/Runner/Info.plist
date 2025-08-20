@@ -2,18 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
-		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Necesitamos tu ubicación para mostrar el mapa correctamente.</string>
-
-		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>Esta app necesita acceder a tu ubicación en segundo plano para funciones avanzadas.</string>
-
-		<key>io.flutter.embedded_views_preview</key>
-		<true/>
-
-		<key>GMSApiKey</key>
-		<string>AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM</string>
-
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
 		<key>CFBundleDevelopmentRegion</key>
@@ -57,36 +45,46 @@
 		</array>
 		<key>CFBundleVersion</key>
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
+		<key>GMSApiKey</key>
+		<string>AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM</string>
 		<key>LSApplicationCategoryType</key>
 		<string></string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
-		<key>UIDeviceFamily</key>
-		<array>
-			<integer>1</integer>
-		</array>
 		<key>MinimumOSVersion</key>
 		<string>15.0</string>
 		<key>NSBonjourServices</key>
 		<array>
 			<string>_dartobservatory._tcp</string>
 		</array>
+		<key>NSCalendarsUsageDescription</key>
+		<string>Tourify necesita acceso al calendario para permitirte planificar y organizar tus actividades turísticas y eventos de viaje.</string>
+		<key>NSFaceIDUsageDescription</key>
+		<string>Usa Face ID para acceder de forma segura a tu cuenta de Tourify.</string>
+		<key>NSLocalAuthenticationUsageDescription</key>
+		<string>Usa Touch ID o Face ID para acceder de forma segura a tu cuenta de Tourify.</string>
 		<key>NSLocalNetworkUsageDescription</key>
 		<string>Esta aplicación necesita acceso a la red local para la depuración y el desarrollo</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>Tourify necesita acceder a tu fototeca para permitirte adjuntar y compartir tickets, reservas y fotos de tus viajes en tus guías.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>Tourify necesita guardar imágenes y adjuntos en tu fototeca cuando exportas o descargas tickets y fotos de tus viajes.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 		<string>Esta aplicación necesita acceder a tu ubicación para sugerir destinos y actividades cercanas, incluso cuando la app está en segundo plano.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Esta aplicación necesita acceder a tu ubicación para sugerir destinos y actividades cercanas.</string>
 		<key>NSUserNotificationUsageDescription</key>
 		<string>Esta aplicación quiere enviarte notificaciones para mantenerte informado sobre tus guías y actividades.</string>
-		<key>NSFaceIDUsageDescription</key>
-		<string>Usa Face ID para acceder de forma segura a tu cuenta de Tourify.</string>
-		<key>NSLocalAuthenticationUsageDescription</key>
-		<string>Usa Touch ID o Face ID para acceder de forma segura a tu cuenta de Tourify.</string>
-		<key>NSCalendarsUsageDescription</key>
-		<string>Tourify necesita acceso al calendario para permitirte planificar y organizar tus actividades turísticas y eventos de viaje.</string>
 		<key>UIApplicationSupportsIndirectInputEvents</key>
 		<true/>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+		</array>
+		<key>UIDeviceFamily</key>
+		<array>
+			<integer>1</integer>
+		</array>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>
 		<key>UIMainStoryboardFile</key>
@@ -99,5 +97,7 @@
 		</array>
 		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false/>
+		<key>io.flutter.embedded_views_preview</key>
+		<true/>
 	</dict>
 </plist>

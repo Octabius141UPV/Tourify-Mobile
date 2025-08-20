@@ -56,6 +56,7 @@ class DiscoverService {
     List<String>? discardedTitles,
     int? travelers,
     List<String>? travelModes,
+    String? travelIntensity,
   }) async* {
     try {
       _isLoading = true;
@@ -76,6 +77,7 @@ class DiscoverService {
         discardedTitles: discardedTitles,
         travelers: travelers,
         travelModes: travelModes,
+        travelIntensity: travelIntensity,
       )) {
         // Convertir actividades del API al formato local
         final activities = ActivityMapper.fromApiListToLocal(apiActivities);
@@ -105,6 +107,7 @@ class DiscoverService {
     List<String>? discardedTitles,
     int? travelers,
     List<String>? travelModes,
+    String? travelIntensity,
   }) async {
     try {
       _isLoading = true;
@@ -125,6 +128,7 @@ class DiscoverService {
         discardedTitles: discardedTitles,
         travelers: travelers,
         travelModes: travelModes,
+        travelIntensity: travelIntensity,
       );
 
       // Convertir actividades del API al formato local

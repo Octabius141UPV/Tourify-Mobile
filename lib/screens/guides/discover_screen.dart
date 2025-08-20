@@ -6,6 +6,8 @@ import 'package:flutter_card_swiper/flutter_card_swiper.dart';
 import 'package:tourify_flutter/services/auth_service.dart';
 import 'package:tourify_flutter/services/navigation_service.dart';
 import 'package:tourify_flutter/services/discover_service.dart';
+import 'package:tourify_flutter/services/analytics_service.dart';
+import 'package:tourify_flutter/utils/dialog_utils.dart';
 
 class DiscoverScreen extends StatefulWidget {
   final String? destination;
@@ -13,8 +15,10 @@ class DiscoverScreen extends StatefulWidget {
   final DateTime? endDate;
   final int travelers;
   final List<String>? travelModes;
+  final String? travelIntensity;
   final String? guideName;
   final String? guideDescription;
+  final bool isGuestMode;
 
   const DiscoverScreen({
     super.key,
@@ -23,8 +27,10 @@ class DiscoverScreen extends StatefulWidget {
     this.endDate,
     this.travelers = 1,
     this.travelModes,
+    this.travelIntensity,
     this.guideName,
     this.guideDescription,
+    this.isGuestMode = false,
   });
 
   @override
@@ -128,13 +134,29 @@ class _DiscoverScreenState extends State<DiscoverScreen>
         'Iniciando stream de actividades para: ${widget.destination ?? 'Madrid'}');
     print('Fechas: ${widget.startDate} - ${widget.endDate}');
 
+    // Calcular el límite basado en la intensidad del usuario
+    int activitiesPerDay = 5; // Por defecto moderado
+    if (widget.travelIntensity == 'Relajado') {
+      activitiesPerDay = 3;
+    } else if (widget.travelIntensity == 'Activo') {
+      activitiesPerDay = 7;
+    }
+
+    final numberOfDays =
+        widget.endDate!.difference(widget.startDate!).inDays + 1;
+    final totalLimit = activitiesPerDay * numberOfDays;
+
+    print(
+        'Calculando límite: $activitiesPerDay actividades/día × $numberOfDays días = $totalLimit actividades');
+
     _activitiesStream = DiscoverService.fetchActivitiesStream(
       destination: widget.destination ?? 'Madrid',
       startDate: widget.startDate,
       endDate: widget.endDate,
-      limit: 5 * (widget.endDate!.difference(widget.startDate!).inDays + 1),
+      limit: totalLimit,
       travelers: widget.travelers,
       travelModes: widget.travelModes,
+      travelIntensity: widget.travelIntensity,
     );
   }
 
@@ -402,46 +424,19 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
   // Mostrar diálogo de confirmación para salir
   void _showExitDialog(BuildContext context) {
-    showDialog(
+    DialogUtils.showCupertinoConfirmation(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.exit_to_app, color: Colors.red),
-              const SizedBox(width: 8),
-              Expanded(
-                child: const Text('Salir del descubrimiento'),
-              ),
-            ],
-          ),
-          content: const Text(
-            '¿Estás seguro de que quieres salir? Perderás el progreso actual de descubrimiento.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
-              onPressed: () {
-                // Limpiar actividades cuando el usuario confirme salir
-                DiscoverService.reset();
-                Navigator.of(context).pop(); // Close dialog
-                Navigator.of(context).pop(); // Close discover screen
-              },
-              child: const Text(
-                'Salir',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+      title: 'Salir del descubrimiento',
+      content:
+          '¿Estás seguro de que quieres salir? Perderás el progreso actual de descubrimiento.',
+      confirmLabel: 'Salir',
+      confirmColor: Colors.red,
+    ).then((confirmed) {
+      if (confirmed == true) {
+        DiscoverService.reset();
+        Navigator.of(context).pop();
+      }
+    });
   }
 
   // Filtrar actividades para mostrar solo las no evaluadas (método original como fallback)

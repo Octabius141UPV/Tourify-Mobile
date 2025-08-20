@@ -93,9 +93,6 @@ class GuideService {
         );
       }
 
-      // Método para actualizar estadísticas del usuario cuando crea una guía
-      await updateUserGuideStats(userId);
-
       return guideRef.id;
     } catch (e) {
       print('Error creating guide: $e');
@@ -113,9 +110,8 @@ class GuideService {
     try {
       final days = _getDaysBetweenDates(startDate, endDate);
 
-      // NO redistribuir actividades - mantener el orden exacto del servidor
-      // Simplemente añadir las actividades en orden secuencial
-
+      // Asignación basada en horario: si `order`/`timeSlot` vienen del servidor
+      // los respetamos; si no, calculamos orden y franjas y guardamos start/end.
       int activityIndex = 0;
 
       for (int i = 0; i < days.length; i++) {
@@ -133,11 +129,116 @@ class GuideService {
           activitiesForThisDay = (remainingActivities / remainingDays).ceil();
         }
 
-        // Añadir actividades en orden secuencial (sin alterar el orden)
+        // Recolectar actividades del día y calcular horarios
+        final List<Activity> activitiesForDay = [];
         for (int j = 0;
             j < activitiesForThisDay && activityIndex < activities.length;
             j++) {
-          final activity = activities[activityIndex];
+          activitiesForDay.add(activities[activityIndex]);
+          activityIndex++;
+        }
+
+        // Helper para detectar categoría de fiesta (amplio)
+        bool isPartyCategory(String? category) {
+          final c = (category ?? '').toLowerCase();
+          return c == 'fiesta' ||
+              c == 'nightlife' ||
+              c == 'party' ||
+              c == 'discoteca' ||
+              c == 'club' ||
+              c == 'bar';
+        }
+
+        // Debug: listar categorías del día antes de ordenar
+        try {
+          final cats = activitiesForDay
+              .map((a) => (a.category ?? '').toString())
+              .toList();
+          print('[Guía] Día ${i + 1}: categorías antes de ordenar: ' +
+              cats.join(', '));
+        } catch (_) {}
+
+        // Si hay actividades marcadas como fiesta, asegurar que sea la última
+        activitiesForDay.sort((a, b) {
+          final aIsParty = isPartyCategory(a.category);
+          final bIsParty = isPartyCategory(b.category);
+          if (aIsParty == bIsParty) {
+            // Respetar order si existe; si no, mantener estabilidad
+            if (a.order != null && b.order != null) {
+              return a.order!.compareTo(b.order!);
+            }
+            if (a.order != null) return -1;
+            if (b.order != null) return 1;
+            return 0;
+          }
+          return aIsParty ? 1 : -1; // fiesta al final
+        });
+
+        // Debug: listar categorías del día después de ordenar
+        try {
+          final cats = activitiesForDay
+              .map((a) => (a.category ?? '').toString())
+              .toList();
+          print('[Guía] Día ${i + 1}: categorías tras ordenar: ' +
+              cats.join(', '));
+        } catch (_) {}
+
+        // Definir slots por defecto según cantidad
+        final DateTime dayDate =
+            DateTime(days[i].year, days[i].month, days[i].day);
+        DateTime currentStart =
+            DateTime(dayDate.year, dayDate.month, dayDate.day, 9, 0);
+
+        DateTime slotStartForTimeSlot(String? timeSlot, DateTime fallback) {
+          switch ((timeSlot ?? '').toLowerCase()) {
+            case 'morning':
+              return DateTime(dayDate.year, dayDate.month, dayDate.day, 9, 0);
+            case 'afternoon':
+              return DateTime(dayDate.year, dayDate.month, dayDate.day, 13, 30);
+            case 'evening':
+              return DateTime(dayDate.year, dayDate.month, dayDate.day, 18, 30);
+            case 'night':
+              return DateTime(dayDate.year, dayDate.month, dayDate.day, 22, 0);
+            default:
+              return fallback;
+          }
+        }
+
+        for (int j = 0; j < activitiesForDay.length; j++) {
+          final activity = activitiesForDay[j];
+          // Asignar horario: si es fiesta, 00:00-06:00 del día siguiente; si no, usar slot/continuación
+          DateTime startDateTime;
+          DateTime endDateTime;
+
+          if (isPartyCategory(activity.category)) {
+            final nextDay = dayDate.add(const Duration(days: 1));
+            startDateTime =
+                DateTime(nextDay.year, nextDay.month, nextDay.day, 0, 0);
+            endDateTime =
+                DateTime(nextDay.year, nextDay.month, nextDay.day, 6, 0);
+          } else {
+            final proposedStart =
+                slotStartForTimeSlot(activity.timeSlot, currentStart);
+            startDateTime = proposedStart;
+            endDateTime =
+                proposedStart.add(Duration(minutes: activity.duration));
+          }
+
+          final startTs = Timestamp.fromDate(startDateTime);
+          final endTs = Timestamp.fromDate(endDateTime);
+
+          // Debug detallado por actividad
+          try {
+            final rawCat = (activity.category ?? '').toString();
+            final normCat = rawCat.toLowerCase();
+            final isParty = isPartyCategory(rawCat);
+            print('[Guía] Día ${i + 1} · Act ${j + 1} · ${activity.name}');
+            print(
+                '       categoría: "$rawCat" (norm: "$normCat"), isParty=$isParty, timeSlot=${activity.timeSlot}');
+            print(
+                '       horario asignado: ${startDateTime.toIso8601String()} -> ${endDateTime.toIso8601String()}');
+          } catch (_) {}
+
           dayActivities.add({
             'id': activity.id,
             'name': activity.name,
@@ -149,9 +250,14 @@ class GuideService {
             'price': activity.price,
             'duration': activity.duration,
             'tags': activity.tags,
-            'order': j, // Orden dentro del día
+            'order': j,
+            'startTime': startTs,
+            'endTime': endTs,
           });
-          activityIndex++;
+
+          if (!isPartyCategory(activity.category)) {
+            currentStart = endDateTime.add(const Duration(minutes: 30));
+          }
         }
 
         await _firestore
@@ -164,9 +270,7 @@ class GuideService {
           'dayNumber': i + 1,
           'activities': dayActivities,
           'totalDuration': dayActivities.fold<int>(
-            0,
-            (sum, activity) => sum + (activity['duration'] as int? ?? 0),
-          ),
+              0, (sum, activity) => sum + (activity['duration'] as int? ?? 0)),
           'totalPrice': dayActivities.fold<double>(
             0.0,
             (sum, activity) => sum + (activity['price'] as double? ?? 0.0),
@@ -389,9 +493,27 @@ class GuideService {
         // Calcular duración basada en fechas
         int totalDays = 0;
         if (data['startDate'] != null && data['endDate'] != null) {
-          final startDate = (data['startDate'] as Timestamp).toDate();
-          final endDate = (data['endDate'] as Timestamp).toDate();
-          totalDays = endDate.difference(startDate).inDays + 1;
+          DateTime? _toDt(dynamic v) {
+            if (v is Timestamp) return v.toDate();
+            if (v is DateTime) return v;
+            if (v is String) return DateTime.tryParse(v);
+            if (v is Map) {
+              final s = v['_seconds'] ?? v['seconds'];
+              final n = v['_nanoseconds'] ?? v['nanoseconds'];
+              if (s is num) {
+                final ms =
+                    (s * 1000).toInt() + ((n is num) ? (n / 1e6).floor() : 0);
+                return DateTime.fromMillisecondsSinceEpoch(ms);
+              }
+            }
+            return null;
+          }
+
+          final startDate = _toDt(data['startDate']);
+          final endDate = _toDt(data['endDate']);
+          if (startDate != null && endDate != null) {
+            totalDays = endDate.difference(startDate).inDays + 1;
+          }
         }
 
         // Obtener días y actividades de la subcolección 'days'
@@ -484,24 +606,7 @@ class GuideService {
     }
   }
 
-  // Helper function para obtener imagen de actividad desde ImageService
-  static String _getActivityImageFromService(
-      String activityTitle, String city) {
-    // Normalizar el título y ciudad para buscar en ImageService
-    final normalizedCity = city.toLowerCase();
-    final normalizedTitle = activityTitle.toLowerCase();
-
-    // Buscar en el mapeo de actividades específicas del ImageService
-    final activityKey = '${normalizedCity}_$normalizedTitle';
-    final images = ImageService.popularGuidesImages;
-
-    if (images.containsKey(activityKey)) {
-      return images[activityKey]!;
-    }
-
-    // Si no se encuentra, usar imagen genérica de la ciudad
-    return ImageService.getCityImage(normalizedCity);
-  }
+  // (eliminado) _getActivityImageFromService no se usa
 
   // Get top public guides - Guías curadas por el equipo
   static Future<List<Map<String, dynamic>>> getTopPublicGuides(
@@ -595,13 +700,7 @@ class GuideService {
     }
   }
 
-  // Helper method para reordenar guías según preferencias
-  static List<Map<String, dynamic>> _reorderByPreference(
-      List<Map<String, dynamic>> guides, String preferredId) {
-    final preferredGuide = guides.firstWhere((g) => g['id'] == preferredId);
-    final otherGuides = guides.where((g) => g['id'] != preferredId).toList();
-    return [preferredGuide, ...otherGuides];
-  }
+  // (eliminado) _reorderByPreference no se usa
 
   // Método para obtener datos mockeados completos de guías predefinidas
   static Map<String, dynamic>? getMockedGuideDetails(String guideId) {
@@ -1421,20 +1520,6 @@ class GuideService {
     }
   }
 
-  // Método para actualizar estadísticas del usuario cuando crea una guía
-  static Future<void> updateUserGuideStats(String userId) async {
-    try {
-      // Simple contador de guías creadas para justificar login
-      await _firestore.collection('user_interactions').add({
-        'userId': userId,
-        'action': 'guide_created',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      print('Error logging guide creation: $e');
-    }
-  }
-
   // Copiar una guía predefinida a la cuenta del usuario
   static Future<String?> copyPredefinedGuide(String predefinedGuideId) async {
     try {
@@ -1476,9 +1561,6 @@ class GuideService {
 
       // Copiar los días y actividades de la guía predefinida
       await _copyPredefinedGuideDays(guideRef.id, predefinedGuide);
-
-      // Actualizar estadísticas del usuario
-      await updateUserGuideStats(userId);
 
       return guideRef.id;
     } catch (e) {

@@ -13,7 +13,7 @@ class FirebaseConfig {
       storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET'] ?? '',
       authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN'] ?? '',
       iosClientId: dotenv.env['GOOGLE_IOS_CLIENT_ID'] ?? '',
-      iosBundleId: 'com.example.tourify',
+      iosBundleId: 'com.mycompany.tourify', // ✅ Corregido
     );
   }
 }

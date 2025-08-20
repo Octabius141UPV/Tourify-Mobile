@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:tourify_flutter/config/app_colors.dart';
+import 'package:tourify_flutter/services/analytics_service.dart';
 import 'package:animations/animations.dart';
-import 'create_guide_modal.dart';
+import 'package:tourify_flutter/widgets/home/create_guide_modal.dart';
 import 'dart:ui';
 import 'package:firebase_auth/firebase_auth.dart';
-
-import '../../config/app_colors.dart';
 
 class CreateGuideButton extends StatelessWidget {
   final VoidCallback?
@@ -67,7 +70,8 @@ class CreateGuideButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(32),
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+            height: 64,
+            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 32),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(32),
@@ -95,14 +99,14 @@ class CreateGuideButton extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.max,
               children: const [
-                Icon(Icons.flight_takeoff, color: AppColors.primary, size: 22),
-                SizedBox(width: 12),
+                Icon(Icons.flight_takeoff, color: AppColors.primary, size: 24),
+                SizedBox(width: 16),
                 Text(
                   'Comenzar mi viaje',
                   style: TextStyle(
                     color: Color(0xFF9CA3AF),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],

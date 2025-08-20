@@ -1,8 +1,8 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import '../config/api_config.dart';
+import 'package:tourify_flutter/config/api_config.dart';
 
 class PublicGuidesService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;

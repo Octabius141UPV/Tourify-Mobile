@@ -43,14 +43,14 @@ class AnalyticsNavigatorObserver extends NavigatorObserver {
         AnalyticsService.trackScreenView(screenName, parameters: {
           'action': action,
           'route_type': route.runtimeType.toString(),
-        });
+        }).catchError((e) => debugPrint('Error tracking screen view: $e'));
 
         // Registrar evento de navegación
         AnalyticsService.trackEvent('screen_navigation', parameters: {
           'screen_name': screenName,
           'action': action,
           'timestamp': DateTime.now().toIso8601String(),
-        });
+        }).catchError((e) => debugPrint('Error tracking navigation event: $e'));
 
         debugPrint('🧭 Navigation tracked: $action -> $screenName');
       }
@@ -66,6 +66,16 @@ class AnalyticsNavigatorObserver extends NavigatorObserver {
       String? routeName = route.settings.name;
 
       if (routeName != null && routeName.isNotEmpty && routeName != '/') {
+        // Detectar si es un deep link de Firebase Auth
+        if (_isFirebaseAuthDeepLink(routeName)) {
+          return 'firebase_auth_callback';
+        }
+
+        // Detectar si es una URL larga o deep link
+        if (_isLongUrlOrDeepLink(routeName)) {
+          return 'deep_link_callback';
+        }
+
         // Limpiar nombre de ruta
         String screenName = routeName.replaceFirst('/', '');
         return _formatScreenName(screenName);
@@ -88,6 +98,24 @@ class AnalyticsNavigatorObserver extends NavigatorObserver {
       debugPrint('❌ Error extracting screen name: $e');
       return 'unknown_screen';
     }
+  }
+
+  /// Detecta si el nombre de ruta es un deep link de Firebase Auth
+  bool _isFirebaseAuthDeepLink(String routeName) {
+    return routeName.contains('firebaseauth') ||
+        routeName.contains('auth/callback') ||
+        routeName.contains('recaptchaToken') ||
+        routeName.contains('authType=verifyApp') ||
+        routeName.contains('deep_link_id=');
+  }
+
+  /// Detecta si el nombre de ruta es una URL larga o deep link
+  bool _isLongUrlOrDeepLink(String routeName) {
+    return routeName.startsWith('http') ||
+        routeName.contains('://') ||
+        routeName.contains('?') ||
+        routeName.contains('&') ||
+        routeName.length > 100;
   }
 
   /// Formatea el nombre de pantalla para hacerlo más legible

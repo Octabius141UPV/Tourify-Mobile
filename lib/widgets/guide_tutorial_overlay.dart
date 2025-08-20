@@ -1,5 +1,6 @@
+import 'package:tourify_flutter/services/guide_tutorial_service.dart';
 import 'package:flutter/material.dart';
-import '../services/guide_tutorial_service.dart';
+import 'package:flutter/services.dart';
 
 class GuideTutorialOverlay extends StatefulWidget {
   final bool canEdit;

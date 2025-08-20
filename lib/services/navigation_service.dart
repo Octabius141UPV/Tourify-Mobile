@@ -1,14 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:tourify_flutter/screens/guide_detail_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:tourify_flutter/screens/guides/guide_detail_screen.dart';
+import 'dart:convert';
 import 'package:tourify_flutter/services/collaborators_service.dart';
 import 'package:tourify_flutter/services/auth_service.dart';
+import 'package:tourify_flutter/screens/onboarding/welcome_screen.dart';
+import 'package:tourify_flutter/services/analytics_service.dart';
 
 class NavigationService {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
 
   static BuildContext? get context => navigatorKey.currentContext;
+
+  // Deep link pendiente (para unirse a guía tras registro/login)
+  static Map<String, String>? _pendingJoin; // { guideId, token }
+  static bool _isHandlingJoin = false;
+
+  static void setPendingJoin({required String guideId, required String token}) {
+    _pendingJoin = {'guideId': guideId, 'token': token};
+  }
+
+  static bool get hasPendingJoin => _pendingJoin != null;
+
+  static Map<String, String>? takePendingJoin() {
+    final pending = _pendingJoin;
+    _pendingJoin = null;
+    return pending;
+  }
 
   // Método para navegar sin transiciones
   static Future<T?> navigateWithoutTransition<T extends Object?>(
@@ -32,6 +54,53 @@ class NavigationService {
     Navigator.of(context).pushReplacementNamed(routeName);
   }
 
+  // Navegar a Welcome para registro/login desde deep link
+  static Future<void> navigateToWelcome({Object? arguments}) async {
+    final context = NavigationService.context;
+    if (context == null) return;
+    await Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        settings: const RouteSettings(name: '/welcome'),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const WelcomeScreen(),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
+  }
+
+  // Navegar a vista previa de guía (solo lectura) usando token
+  static Future<void> navigateToGuidePreview({
+    required String guideId,
+    required String token,
+    String? guideTitle,
+  }) async {
+    final context = NavigationService.context;
+    if (context == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          settings: RouteSettings(
+            name: '/guide-preview',
+            arguments: {
+              'guideId': guideId,
+              'guideTitle': guideTitle ?? 'Guía',
+              'isPreview': true,
+              'previewToken': token,
+            },
+          ),
+          pageBuilder: (context, animation, secondaryAnimation) =>
+              GuideDetailScreen(
+            guideId: guideId,
+            guideTitle: guideTitle ?? 'Guía',
+          ),
+          transitionDuration: Duration.zero,
+          reverseTransitionDuration: Duration.zero,
+        ),
+      );
+    });
+  }
+
   // Navigate to guide details
   static Future<void> navigateToGuide(String guideId,
       {String? guideTitle, String? accessToken}) async {
@@ -41,6 +110,16 @@ class NavigationService {
     try {
       // Si hay un token de acceso, verificar y procesar
       if (accessToken != null) {
+        // Fuerza previsualización en tokens de debug/mock para pruebas
+        final tokenLc = accessToken.toLowerCase();
+        if (tokenLc.startsWith('debug') || tokenLc.startsWith('mock')) {
+          await navigateToGuidePreview(
+            guideId: guideId,
+            token: accessToken,
+            guideTitle: guideTitle,
+          );
+          return;
+        }
         // Esperar un momento para asegurar que Firebase Auth esté listo
         await Future.delayed(const Duration(milliseconds: 500));
 
@@ -78,7 +157,12 @@ class NavigationService {
         }
 
         if (user == null) {
-          _showErrorDialog('El link de acceso no es válido o ha expirado');
+          // Mostrar vista previa primero
+          await navigateToGuidePreview(
+            guideId: guideId,
+            token: accessToken,
+            guideTitle: guideTitle,
+          );
           return;
         }
 
@@ -93,21 +177,43 @@ class NavigationService {
       }
 
       // Navigate directly to the GuideDetailScreen
-      Navigator.of(context).pushReplacement(
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              GuideDetailScreen(
-            guideId: guideId,
-            guideTitle: guideTitle ?? 'Mi Guía de Viaje',
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _recordGuideOpened(guideId);
+        Navigator.of(context).pushReplacement(
+          PageRouteBuilder(
+            settings: const RouteSettings(name: '/guide'),
+            pageBuilder: (context, animation, secondaryAnimation) =>
+                GuideDetailScreen(
+              guideId: guideId,
+              guideTitle: guideTitle ?? 'Mi Guía de Viaje',
+            ),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
           ),
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
-        ),
-      );
+        );
+      });
     } catch (e) {
       print('Error navigating to guide: $e');
       _showErrorDialog('Error al abrir la guía');
     }
+  }
+
+  // Registrar última apertura de guía
+  static Future<void> _recordGuideOpened(String guideId) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      final firestore = FirebaseFirestore.instance;
+      await firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('recentlyOpened')
+          .doc(guideId)
+          .set({
+        'guideId': guideId,
+        'openedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
   }
 
   // Show error dialog
@@ -115,19 +221,21 @@ class NavigationService {
     final context = NavigationService.context;
     if (context == null) return;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   // Show retry dialog for temporary errors
@@ -135,39 +243,41 @@ class NavigationService {
     final context = NavigationService.context;
     if (context == null) return;
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange),
-            const SizedBox(width: 8),
-            const Text('Servicio no disponible'),
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              const SizedBox(width: 8),
+              const Text('Servicio no disponible'),
+            ],
+          ),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Reintentar después de un breve delay
+                Future.delayed(const Duration(seconds: 1), () {
+                  handleJoinGuideLink(guideId, token);
+                });
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Reintentar'),
+            ),
           ],
         ),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // Reintentar después de un breve delay
-              Future.delayed(const Duration(seconds: 1), () {
-                handleJoinGuideLink(guideId, token);
-              });
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Reintentar'),
-          ),
-        ],
-      ),
-    );
+      );
+    });
   }
 
   // Navigate back to home
@@ -245,7 +355,102 @@ class NavigationService {
     }
 
     try {
+      if (_isHandlingJoin) {
+        print('⚠️ Ya se está procesando un deeplink, se ignora el duplicado.');
+        return;
+      }
+      _isHandlingJoin = true;
       print('Procesando link de unirse a guía: $guideId con token: $token');
+
+      // Tokens debug/mock: si no hay usuario -> previsualizar; si hay usuario -> mock join
+      final tokenLc = token.toLowerCase();
+      if (tokenLc.startsWith('debug') || tokenLc.startsWith('mock')) {
+        final current = FirebaseAuth.instance.currentUser;
+        if (current == null) {
+          await navigateToGuidePreview(
+            guideId: guideId,
+            token: token,
+            guideTitle: 'Guía compartida',
+          );
+          return;
+        }
+        // MOCK JOIN con usuario autenticado
+        try {
+          final firestore = FirebaseFirestore.instance;
+          final guides = firestore.collection('guides');
+          final users = firestore.collection('users');
+
+          final guideRef = guides.doc(guideId);
+          final guideSnap = await guideRef.get();
+          if (!guideSnap.exists) {
+            await guideRef.set({
+              'title': 'Guía compartida (debug)',
+              'city': 'Roma',
+              'startDate': DateTime.now(),
+              'endDate': DateTime.now().add(const Duration(days: 2)),
+              'isPublic': false,
+              'totalDays': 2,
+              'createdAt': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+              'collaborators': <String>[],
+            });
+          }
+
+          await users
+              .doc(current.uid)
+              .collection('sharedWithMe')
+              .doc(guideId)
+              .set({
+            'guideId': guideId,
+            'role': 'viewer',
+            'sharedAt': FieldValue.serverTimestamp(),
+            'sharedBy': 'Mock Debug',
+          }, SetOptions(merge: true));
+
+          // Añadir entrada en subcolección collaborators de la guía
+          await guideRef.collection('collaborators').doc(current.uid).set({
+            'userId': current.uid,
+            'role': 'viewer',
+            'addedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+          // Asegurar que el array collaborators del documento principal contiene al usuario
+          await guideRef.update({
+            'collaborators': FieldValue.arrayUnion([current.uid]),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+
+          showSuccessMessage('¡Guía de prueba guardada en Compartidas!');
+        } catch (e) {
+          // Fallback: llamar al endpoint admin del servidor
+          try {
+            final baseUrl =
+                dotenv.env['API_BASE_URL'] ?? 'http://localhost:8000';
+            final uriPrimary = Uri.parse('$baseUrl/collaborators/admin/add');
+            final bodyJson = jsonEncode({
+              'guideId': guideId,
+              'userId': current.uid,
+              'role': 'viewer',
+            });
+            http.Response resp = await http.post(
+              uriPrimary,
+              headers: {'Content-Type': 'application/json'},
+              body: bodyJson,
+            );
+
+            if (resp.statusCode == 200) {
+              showSuccessMessage('¡La guía compartida se ha guardado!');
+            } else {
+              final body = resp.body.isNotEmpty ? resp.body : '(sin cuerpo)';
+              _showErrorDialog(
+                  'No se pudo guardar la guía (admin): ${resp.statusCode}\nHosts probados: $baseUrl, localhost:4000, 127.0.0.1:4000\n$body');
+            }
+          } catch (e2) {
+            _showErrorDialog('No se pudo guardar la guía: $e2');
+          }
+        }
+        return;
+      }
 
       // Esperar un momento para que Firebase Auth se inicialice completamente
       await Future.delayed(const Duration(milliseconds: 500));
@@ -288,25 +493,31 @@ class NavigationService {
       }
 
       if (user == null) {
-        _showErrorDialog(
-            'Debes iniciar sesión antes de unirte a una guía.\n\nPor favor, inicia sesión e intenta nuevamente.');
+        // Mostrar vista previa primero
+        await navigateToGuidePreview(
+          guideId: guideId,
+          token: token,
+          guideTitle: 'Guía compartida',
+        );
         return;
       }
 
       // Mostrar diálogo de progreso
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Row(
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(width: 16),
-              Text('Uniéndote a la guía...'),
-            ],
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const AlertDialog(
+            content: Row(
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(width: 16),
+                Text('Uniéndote a la guía...'),
+              ],
+            ),
           ),
-        ),
-      );
+        );
+      });
 
       final collaboratorsService = CollaboratorsService();
 
@@ -364,6 +575,9 @@ class NavigationService {
 
         // Navegar a la guía después de un pequeño retraso
         await Future.delayed(const Duration(milliseconds: 500));
+        AnalyticsService.trackEvent('join_completed', parameters: {
+          'guide_id': guideId,
+        });
         await navigateToGuide(guideId, guideTitle: 'Guía compartida');
       } else {
         // Error: mostrar mensaje de error
@@ -424,6 +638,17 @@ class NavigationService {
       } else {
         _showErrorDialog(errorMessage);
       }
+    } finally {
+      _isHandlingJoin = false;
     }
+  }
+
+  // Procesa join pendiente tras autenticación
+  static Future<void> processPendingJoinIfAny() async {
+    final pending = takePendingJoin();
+    if (pending == null) return;
+    final guideId = pending['guideId']!;
+    final token = pending['token']!;
+    await handleJoinGuideLink(guideId, token);
   }
 }

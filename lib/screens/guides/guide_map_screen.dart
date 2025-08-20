@@ -1,21 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:async';
-import '../data/activity.dart';
-import '../config/app_colors.dart';
-import '../services/map/geocoding_service.dart';
+import 'package:tourify_flutter/data/activity.dart';
+import 'package:tourify_flutter/config/app_colors.dart';
+import 'package:tourify_flutter/services/map/geocoding_service.dart';
+import 'package:tourify_flutter/services/location_service.dart';
+import 'package:geolocator/geolocator.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/services.dart';
-import '../services/map/places_service.dart';
+import 'package:tourify_flutter/services/map/places_service.dart';
 import 'dart:math' as math;
 import 'package:url_launcher/url_launcher.dart';
-import '../widgets/map/day_selector_header.dart';
-import '../widgets/map/activity_list.dart';
-import '../widgets/map/map_loading_overlay.dart';
-import '../widgets/map/activity_marker_utils.dart';
+import 'package:tourify_flutter/widgets/map/day_selector_header.dart';
+import 'package:tourify_flutter/widgets/map/activity_list.dart';
+import 'package:tourify_flutter/widgets/map/map_loading_overlay.dart';
+import 'package:tourify_flutter/widgets/map/activity_marker_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../widgets/common/custom_bottom_navigation_bar.dart';
-import '../utils/activity_utils.dart';
+import 'package:tourify_flutter/widgets/common/custom_bottom_navigation_bar.dart';
+import 'package:tourify_flutter/utils/activity_utils.dart';
 
 /// Pantalla de mapa específica para mostrar las actividades de una guía
 class GuideMapScreen extends StatefulWidget {
@@ -51,6 +53,11 @@ class _GuideMapScreenState extends State<GuideMapScreen>
   Set<Polyline> _polylines = {};
   final ValueNotifier<double> _sheetFraction = ValueNotifier(0.5);
 
+  // Variables para la ubicación del usuario
+  final LocationService _locationService = LocationService();
+  LatLng? _userLocation;
+  bool _hasLocationPermission = false;
+
   // =================== CONTROLADORES DE ANIMACIÓN ===================
   late AnimationController _entranceController;
   late Animation<double> _fadeAnimation;
@@ -73,6 +80,7 @@ class _GuideMapScreenState extends State<GuideMapScreen>
   void initState() {
     super.initState();
     _initAnimations();
+    _initializeUserLocation();
     _initializeMapWithTimeout();
     _loadMarkers();
     _loadPlacesInfo();
@@ -119,6 +127,32 @@ class _GuideMapScreenState extends State<GuideMapScreen>
         _entranceController.forward();
       }
     });
+  }
+
+  /// Inicializa la ubicación del usuario
+  Future<void> _initializeUserLocation() async {
+    try {
+      print('🗺️ Solicitando permisos de ubicación...');
+      bool hasPermission = await _locationService.requestLocationPermission();
+      setState(() {
+        _hasLocationPermission = hasPermission;
+      });
+
+      if (hasPermission) {
+        // Obtener ubicación actual
+        Position? position = await _locationService.getCurrentPosition();
+        if (position != null) {
+          setState(() {
+            _userLocation = LatLng(position.latitude, position.longitude);
+          });
+          print('📍 Ubicación del usuario obtenida: $_userLocation');
+        }
+      } else {
+        print('❌ Permisos de ubicación denegados');
+      }
+    } catch (e) {
+      print('❌ Error obteniendo ubicación del usuario: $e');
+    }
   }
 
   void _initSelectedDays() {
@@ -580,7 +614,8 @@ class _GuideMapScreenState extends State<GuideMapScreen>
                                         ),
                                         markers: _markers,
                                         polylines: _polylines,
-                                        myLocationEnabled: false,
+                                        myLocationEnabled:
+                                            _hasLocationPermission,
                                         myLocationButtonEnabled: false,
                                         mapToolbarEnabled: true,
                                         zoomControlsEnabled: true,
@@ -981,7 +1016,7 @@ class _GuideMapScreenState extends State<GuideMapScreen>
           ),
           markers: _markers,
           polylines: _polylines,
-          myLocationEnabled: false,
+          myLocationEnabled: _hasLocationPermission,
           myLocationButtonEnabled: false,
           mapToolbarEnabled: true,
           zoomControlsEnabled: true,
@@ -993,6 +1028,8 @@ class _GuideMapScreenState extends State<GuideMapScreen>
             _createPolylinesForSelectedDays();
           },
         ),
+        // Botón de ubicación del usuario
+        _buildUserLocationButton(),
       ],
     );
   }
@@ -1199,6 +1236,112 @@ class _GuideMapScreenState extends State<GuideMapScreen>
     return LatLngBounds(
       southwest: LatLng(minLat, minLng),
       northeast: LatLng(maxLat, maxLng),
+    );
+  }
+
+  /// Centra el mapa en la ubicación del usuario
+  Future<void> _centerOnUserLocation() async {
+    if (_mapController == null) return;
+
+    try {
+      // Solicitar nueva ubicación si no la tenemos o está desactualizada
+      Position? position = await _locationService.getCurrentPosition();
+      if (position != null) {
+        final userLocation = LatLng(position.latitude, position.longitude);
+        setState(() {
+          _userLocation = userLocation;
+        });
+
+        // Animar la cámara hacia la ubicación del usuario
+        await _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(userLocation, 16.0),
+        );
+
+        // Mostrar un mensaje de confirmación
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.my_location, color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Centrado en tu ubicación',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.primary,
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+      } else {
+        // Mostrar error si no se puede obtener la ubicación
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.error, color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'No se pudo obtener tu ubicación',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Error centrando en ubicación del usuario: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Construye el botón de ubicación del usuario
+  Widget _buildUserLocationButton() {
+    if (!_hasLocationPermission) return const SizedBox.shrink();
+
+    return Positioned(
+      top: 16, // Posicionado en la esquina superior derecha
+      right: 16,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: IconButton(
+          onPressed: _centerOnUserLocation,
+          icon: const Icon(Icons.my_location, color: Colors.black),
+          tooltip: 'Mi ubicación',
+        ),
+      ),
     );
   }
 

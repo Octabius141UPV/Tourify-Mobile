@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:tourify_flutter/services/analytics_service.dart';
 
 class PremiumSubscriptionScreen extends StatelessWidget {
   const PremiumSubscriptionScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // 📊 TRACKING: Registrar vista de pantalla premium
+    AnalyticsService.trackScreenView('premium_subscription_screen')
+        .catchError((e) => debugPrint('Error tracking screen view: $e'));
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -140,6 +145,12 @@ class PremiumSubscriptionScreen extends StatelessWidget {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () {
+                    // 📊 TRACKING: Registrar clic en botón de pagar
+                    AnalyticsService.trackPremiumPaymentClick(
+                            'subscription_screen')
+                        .catchError((e) =>
+                            debugPrint('Error tracking payment click: $e'));
+
                     showDialog(
                       context: context,
                       builder: (context) => AlertDialog(

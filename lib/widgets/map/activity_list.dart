@@ -1,7 +1,9 @@
+import 'package:tourify_flutter/data/activity.dart';
+import 'package:tourify_flutter/services/map/places_service.dart';
+import 'package:tourify_flutter/utils/activity_utils.dart';
 import 'package:flutter/material.dart';
-import '../../data/activity.dart';
-import '../../services/map/places_service.dart';
-import '../../utils/activity_utils.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ActivityList extends StatelessWidget {
   final List<Activity> activities;

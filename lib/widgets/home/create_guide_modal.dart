@@ -4,8 +4,9 @@ import 'package:flutter/cupertino.dart';
 import 'dart:io';
 import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:tourify_flutter/screens/discover_screen.dart';
+import 'package:tourify_flutter/screens/guides/discover_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:tourify_flutter/services/user_service.dart';
 
 class CreateGuideModal extends StatefulWidget {
   const CreateGuideModal({super.key});
@@ -21,7 +22,7 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
   String? _dateWarning;
   int _travelersCount = 1;
   String? _selectedCity;
-  Set<String> _selectedModes = <String>{};
+  // Eliminado campo no utilizado para evitar warnings de linter
   final TextEditingController _destinationSearchController =
       TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -156,22 +157,116 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
               const SizedBox(height: 18),
               Row(
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Icon(Icons.search, color: Colors.grey, size: 24),
-                  ),
                   Expanded(
                     child: GooglePlaceAutoCompleteTextField(
                       textEditingController: _destinationSearchController,
                       googleAPIKey: googleMapsApiKey,
-                      inputDecoration: const InputDecoration(
+                      inputDecoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'Buscar destinos',
-                        hintStyle: TextStyle(fontSize: 17, color: Colors.grey),
-                        contentPadding:
-                            EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                        hintStyle:
+                            const TextStyle(fontSize: 17, color: Colors.grey),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 12,
+                        ),
+                        prefixIcon: const Padding(
+                          padding: EdgeInsets.only(left: 8, right: 4),
+                          child:
+                              Icon(Icons.search, color: Colors.grey, size: 22),
+                        ),
+                        prefixIconConstraints:
+                            const BoxConstraints(minWidth: 40),
                       ),
                       debounceTime: 400,
+                      // Estilos del contenedor de sugerencias (overlay)
+                      boxDecoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      // Construcción personalizada de cada sugerencia
+                      itemBuilder: (context, index, prediction) {
+                        final description = prediction.description ?? '';
+                        final parts = description.split(',');
+                        final city =
+                            parts.isNotEmpty ? parts.first.trim() : description;
+                        final rest = parts.length > 1
+                            ? parts.sublist(1).join(',').trim()
+                            : '';
+
+                        return Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              bottom: BorderSide(
+                                color: Colors.grey.shade100,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.place_rounded,
+                                  color: Color(0xFF2563EB),
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      city,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black,
+                                      ),
+                                    ),
+                                    if (rest.isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        rest,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey.shade600,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+
                       itemClick: (prediction) {
                         _destinationSearchController.text =
                             prediction.description!;
@@ -622,12 +717,12 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.psychology_outlined,
+                    Icon(Icons.people_outline,
                         color: isInactive ? Colors.grey[400] : Colors.black,
                         size: 28),
                     const SizedBox(width: 10),
                     Text(
-                      '¿Cómo?',
+                      '¿Cuántos?',
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -636,26 +731,12 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                     ),
                   ],
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '$_travelersCount ${_travelersCount == 1 ? 'viajero' : 'viajeros'}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isInactive ? Colors.grey[500] : Colors.black54,
-                      ),
-                    ),
-                    if (_selectedModes.isNotEmpty)
-                      Text(
-                        _selectedModes.join(', '),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isInactive ? Colors.grey[400] : Colors.blue,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                  ],
+                Text(
+                  '$_travelersCount ${_travelersCount == 1 ? 'viajero' : 'viajeros'}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isInactive ? Colors.grey[500] : Colors.black54,
+                  ),
                 ),
               ],
             ),
@@ -717,119 +798,10 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
-              // Sección de modo de viaje
-              Text(
-                'Estilo de viaje',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: isInactive ? Colors.grey[600] : Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildTravelModes(),
             ],
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTravelModes() {
-    final modes = [
-      {
-        'id': 'cultura',
-        'name': 'Cultura',
-        'icon': Icons.museum_outlined,
-        'color': Colors.purple,
-        'description': 'Para subirlo a tus stories'
-      },
-      {
-        'id': 'fiesta',
-        'name': 'Fiesta',
-        'icon': Icons.nightlife_outlined,
-        'color': Colors.pink,
-        'description': 'Para subirlo a tus mejos'
-      },
-    ];
-
-    return Column(
-      children: modes.map((mode) {
-        final isSelected = _selectedModes.contains(mode['id']);
-        final color = mode['color'] as Color;
-
-        return GestureDetector(
-          onTap: () {
-            setState(() {
-              if (isSelected) {
-                _selectedModes.remove(mode['id']);
-              } else {
-                _selectedModes.add(mode['id'] as String);
-              }
-            });
-          },
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: isSelected ? color.withOpacity(0.1) : Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isSelected ? color : Colors.grey[300]!,
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? color : Colors.grey[400],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    mode['icon'] as IconData,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        mode['name'] as String,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: isSelected ? color : Colors.black87,
-                        ),
-                      ),
-                      Text(
-                        mode['description'] as String,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: isSelected
-                              ? color.withOpacity(0.8)
-                              : Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isSelected)
-                  Icon(
-                    Icons.check_circle,
-                    color: color,
-                    size: 24,
-                  ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 
@@ -898,7 +870,7 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                   ),
                 ),
                 child: ElevatedButton.icon(
-                  onPressed: () {
+                  onPressed: () async {
                     final user = FirebaseAuth.instance.currentUser;
                     if (user == null) {
                       showDialog(
@@ -928,6 +900,9 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                     }
                     if (!_validateForm()) return;
 
+                    // Obtener las preferencias del usuario
+                    final userPreferences = await _getUserPreferences();
+
                     // Navegar al discover para crear guía privada
                     Navigator.push(
                       context,
@@ -938,7 +913,8 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
                           startDate: _startDate,
                           endDate: _endDate,
                           travelers: _travelersCount,
-                          travelModes: _selectedModes.toList(),
+                          travelModes: userPreferences['travelModes'],
+                          travelIntensity: userPreferences['travelIntensity'],
                           guideName: null, // Generación automática
                           guideDescription: null, // Sin descripción
                         ),
@@ -986,6 +962,92 @@ class _CreateGuideModalState extends State<CreateGuideModal> {
           curve: Curves.easeInOut,
         );
       });
+    }
+  }
+
+  Future<Map<String, dynamic>> _getUserPreferences() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        return {
+          'travelModes': ['cultura', 'fiesta'],
+          'travelIntensity': 'Moderado'
+        }; // Valores por defecto
+      }
+
+      final userData = await UserService.getUserData(user.uid);
+      if (userData != null) {
+        // Obtener travel modes
+        List<String> travelModes = ['cultura', 'fiesta']; // Valores por defecto
+        if (userData['travel_styles'] != null) {
+          final travelStyles = List<String>.from(userData['travel_styles']);
+          travelModes = [];
+
+          for (final style in travelStyles) {
+            switch (style.toLowerCase()) {
+              case 'cultural':
+              case 'cultura':
+                travelModes.add('cultura');
+                break;
+              case 'party':
+              case 'fiesta':
+                travelModes.add('fiesta');
+                break;
+              case 'adventure':
+              case 'aventura':
+                travelModes.add('aventura');
+                break;
+              case 'relax':
+                travelModes.add('relax');
+                break;
+              default:
+                // Si no reconocemos el estilo, usar cultura por defecto
+                travelModes.add('cultura');
+            }
+          }
+        }
+
+        // Obtener travel intensity
+        String travelIntensity = 'Moderado'; // Valor por defecto
+        if (userData['travelIntensity'] != null) {
+          travelIntensity = userData['travelIntensity'].toString();
+        } else if (userData['activities_per_day'] != null) {
+          final activitiesPerDay = userData['activities_per_day'].toString();
+          switch (activitiesPerDay) {
+            case '3 actividades por día':
+            case '3-4 actividades':
+              travelIntensity = 'Relajado';
+              break;
+            case '5 actividades por día':
+            case '5-6 actividades':
+              travelIntensity = 'Moderado';
+              break;
+            case '7 actividades por día':
+            case '7-8 actividades':
+              travelIntensity = 'Activo';
+              break;
+            default:
+              travelIntensity = 'Moderado';
+          }
+        }
+
+        return {
+          'travelModes':
+              travelModes.isNotEmpty ? travelModes : ['cultura', 'fiesta'],
+          'travelIntensity': travelIntensity
+        };
+      }
+
+      return {
+        'travelModes': ['cultura', 'fiesta'],
+        'travelIntensity': 'Moderado'
+      }; // Valores por defecto
+    } catch (e) {
+      print('Error obteniendo preferencias del usuario: $e');
+      return {
+        'travelModes': ['cultura', 'fiesta'],
+        'travelIntensity': 'Moderado'
+      }; // Valores por defecto en caso de error
     }
   }
 

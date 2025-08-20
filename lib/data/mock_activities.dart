@@ -9,6 +9,8 @@ class Activity {
   final double price;
   final int duration; // en minutos
   final List<String> tags;
+  final int? order; // orden sugerido dentro del día (opcional)
+  final String? timeSlot; // morning | afternoon | evening | night (opcional)
 
   Activity({
     required this.id,
@@ -21,6 +23,8 @@ class Activity {
     required this.price,
     required this.duration,
     required this.tags,
+    this.order,
+    this.timeSlot,
   });
 }
 

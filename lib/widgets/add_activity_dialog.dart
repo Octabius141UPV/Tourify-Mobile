@@ -5,12 +5,16 @@ import 'package:google_places_flutter/model/prediction.dart';
 import 'package:tourify_flutter/services/api_service.dart';
 import 'package:tourify_flutter/data/activity.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class AddActivityDialog extends StatefulWidget {
   final int dayNumber;
   final String guideId;
   final String city;
   final Function(Activity) onSave;
+  final String? initialSearchText; // <-- Añadido
 
   const AddActivityDialog({
     super.key,
@@ -18,6 +22,7 @@ class AddActivityDialog extends StatefulWidget {
     required this.guideId,
     required this.city,
     required this.onSave,
+    this.initialSearchText, // <-- Añadido
   });
 
   @override
@@ -31,27 +36,69 @@ class _AddActivityDialogState extends State<AddActivityDialog> {
   bool _isGeneratingActivity = false;
   bool _showCitySuggestion = false;
 
+  // Para el debounce
+  Timer? _debounce;
+  List<Prediction> _predictions = [];
+
+  // Controlador para el texto real enviado a la API
+  String get _searchTextWithCity {
+    final userText = _searchController.text.trim();
+    final city = widget.city;
+    if (userText.isEmpty) return city;
+    if (userText.toLowerCase().contains(city.toLowerCase())) {
+      return userText;
+    }
+    return '$userText $city';
+  }
+
   @override
   void initState() {
     super.initState();
-
-    // Listener para detectar cuando mostrar sugerencia de ciudad
+    if (widget.initialSearchText != null &&
+        widget.initialSearchText!.isNotEmpty) {
+      _searchController.text = '';
+    }
     _searchController.addListener(_onSearchTextChanged);
   }
 
   void _onSearchTextChanged() {
     final text = _searchController.text.trim().toLowerCase();
     final cityLower = widget.city.toLowerCase();
+    // Debounce para la búsqueda
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (_searchController.text.trim().length > 2) {
+        _fetchPredictions(_searchTextWithCity);
+      } else {
+        setState(() {
+          _predictions = [];
+        });
+      }
+    });
+  }
 
-    // Mostrar sugerencia si el usuario escribió algo pero no incluye la ciudad
-    final shouldShowSuggestion = text.isNotEmpty &&
-        text.length > 2 &&
-        !text.contains(cityLower) &&
-        !cityLower.contains(text);
-
-    if (shouldShowSuggestion != _showCitySuggestion) {
+  Future<void> _fetchPredictions(String input) async {
+    final apiKey = dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
+    if (apiKey.isEmpty) return;
+    final url = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${Uri.encodeComponent(input)}&key=$apiKey&language=es&types=establishment');
+    final response = await http.get(url);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      if (data['status'] == 'OK') {
+        setState(() {
+          _predictions = (data['predictions'] as List)
+              .map((e) => Prediction.fromJson(e))
+              .toList();
+        });
+      } else {
+        setState(() {
+          _predictions = [];
+        });
+      }
+    } else {
       setState(() {
-        _showCitySuggestion = shouldShowSuggestion;
+        _predictions = [];
       });
     }
   }
@@ -60,6 +107,7 @@ class _AddActivityDialogState extends State<AddActivityDialog> {
   void dispose() {
     _searchController.removeListener(_onSearchTextChanged);
     _searchController.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -345,237 +393,124 @@ class _AddActivityDialogState extends State<AddActivityDialog> {
                                 ),
                               ],
                             ),
-                            child: GooglePlaceAutoCompleteTextField(
-                              textEditingController: _searchController,
-                              googleAPIKey:
-                                  dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '',
-                              inputDecoration: InputDecoration(
-                                prefixIcon: Container(
-                                  margin: const EdgeInsets.all(12),
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    Icons.location_on_rounded,
-                                    color: Colors.blue[600],
-                                    size: 20,
+                            child: Column(
+                              children: [
+                                TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    prefixIcon: Container(
+                                      margin: const EdgeInsets.all(12),
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.location_on_rounded,
+                                        color: Colors.blue[600],
+                                        size: 20,
+                                      ),
+                                    ),
+                                    hintText:
+                                        'Ej: Torre Eiffel, Louvre, restaurantes...',
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey[500],
+                                      fontSize: 14,
+                                    ),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[200]!,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.grey[200]!,
+                                      ),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide(
+                                        color: Colors.blue[400]!,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.grey[50],
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 16),
                                   ),
                                 ),
-                                hintText:
-                                    'Ej: Torre Eiffel, Louvre, restaurantes...',
-                                hintStyle: TextStyle(
-                                  color: Colors.grey[500],
-                                  fontSize: 14,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey[200]!,
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Colors.grey[200]!,
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                  borderSide: BorderSide(
-                                    color: Colors.blue[400]!,
-                                    width: 2,
-                                  ),
-                                ),
-                                filled: true,
-                                fillColor: Colors.grey[50],
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 16),
-                              ),
-                              debounceTime: 600,
-                              language: 'es',
-                              isLatLngRequired: true,
-                              getPlaceDetailWithLatLng:
-                                  (Prediction prediction) {
-                                setState(() {
-                                  _selectedPlace = prediction;
-                                });
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Row(
-                                      children: [
-                                        const Icon(Icons.check_circle,
-                                            color: Colors.white),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                              'Ubicación seleccionada: ${prediction.description}'),
+                                if (_predictions.isNotEmpty)
+                                  Container(
+                                    constraints:
+                                        const BoxConstraints(maxHeight: 250),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.05),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
                                         ),
                                       ],
                                     ),
-                                    backgroundColor: Colors.green,
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(10)),
-                                    duration: const Duration(seconds: 3),
-                                  ),
-                                );
-                              },
-                              itemClick: (Prediction prediction) {
-                                _searchController.text =
-                                    prediction.description ?? '';
-                                setState(() {
-                                  _selectedPlace = prediction;
-                                });
-                              },
-                              seperatedBuilder: const Divider(height: 1),
-                              containerHorizontalPadding: 0,
-                              itemBuilder:
-                                  (context, index, Prediction prediction) {
-                                return Container(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey.withOpacity(0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Icon(
-                                          Icons.location_on_rounded,
-                                          color: Colors.grey[600],
-                                          size: 18,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              prediction.structuredFormatting
-                                                      ?.mainText ??
-                                                  prediction.description ??
-                                                  '',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                fontSize: 14,
-                                              ),
-                                            ),
-                                            if (prediction.structuredFormatting
-                                                    ?.secondaryText !=
-                                                null) ...[
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                prediction.structuredFormatting!
-                                                    .secondaryText!,
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Colors.grey[600],
+                                    child: ListView.builder(
+                                      shrinkWrap: true,
+                                      itemCount: _predictions.length,
+                                      itemBuilder: (context, index) {
+                                        final prediction = _predictions[index];
+                                        return ListTile(
+                                          leading: Icon(
+                                              Icons.location_on_rounded,
+                                              color: Colors.blue[600]),
+                                          title: Text(
+                                              prediction.description ?? ''),
+                                          onTap: () async {
+                                            setState(() {
+                                              _selectedPlace = prediction;
+                                              _searchController.text =
+                                                  prediction.description ?? '';
+                                              _predictions = [];
+                                            });
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    const Icon(
+                                                        Icons.check_circle,
+                                                        color: Colors.white),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                          'Ubicación seleccionada: ${prediction.description}'),
+                                                    ),
+                                                  ],
                                                 ),
+                                                backgroundColor: Colors.green,
+                                                behavior:
+                                                    SnackBarBehavior.floating,
+                                                shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10)),
+                                                duration:
+                                                    const Duration(seconds: 3),
                                               ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                            );
+                                          },
+                                        );
+                                      },
+                                    ),
                                   ),
-                                );
-                              },
+                              ],
                             ),
                           ),
                         ],
                       ),
-
-                      // Sugerencia para incluir ciudad
-                      if (_showCitySuggestion)
-                        Container(
-                          margin: const EdgeInsets.only(top: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.amber.withOpacity(0.1),
-                                Colors.orange.withOpacity(0.05),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: Colors.amber.withOpacity(0.3)),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  Icons.lightbulb_outline_rounded,
-                                  color: Colors.amber[700],
-                                  size: 18,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Mejora tu búsqueda',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.amber[800],
-                                      ),
-                                    ),
-                                    Text(
-                                      'Incluye "${widget.city}" para resultados más precisos',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.amber[700],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  final currentText =
-                                      _searchController.text.trim();
-                                  _searchController.text =
-                                      '$currentText ${widget.city}';
-                                  setState(() {
-                                    _showCitySuggestion = false;
-                                  });
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber[600],
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    'Añadir',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
 
                       // Lugar seleccionado
                       if (_selectedPlace != null)

@@ -3,12 +3,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tourify_flutter/services/auth_service.dart';
 import 'package:tourify_flutter/services/user_service.dart';
-import 'package:tourify_flutter/screens/login_screen.dart';
+import 'package:tourify_flutter/services/analytics_service.dart';
+import 'package:tourify_flutter/screens/auth/login_screen.dart';
 import 'package:tourify_flutter/services/navigation_service.dart';
-import 'package:tourify_flutter/services/onboarding_service.dart';
 import 'package:tourify_flutter/services/guide_tutorial_service.dart';
-import 'package:tourify_flutter/screens/onboarding_screen.dart';
-import '../widgets/common/custom_bottom_navigation_bar.dart';
+
+import 'package:tourify_flutter/widgets/common/custom_bottom_navigation_bar.dart';
+import 'package:tourify_flutter/utils/dialog_utils.dart';
+import 'package:tourify_flutter/screens/main/preferences_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -57,22 +59,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
               );
             }
 
-            // Si no existe el documento del usuario, créalo
+            // Si no existe el documento del usuario, no lo recreamos automáticamente.
+            // Esto evita re-crear el doc tras eliminar cuenta. Forzamos salida a Login.
             if (!userSnapshot.hasData || !userSnapshot.data!.exists) {
-              return FutureBuilder(
-                future: UserService.createUserDocument(user),
-                builder: (context, createSnapshot) {
-                  if (createSnapshot.connectionState ==
-                      ConnectionState.waiting) {
-                    return const Scaffold(
-                      body: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  // Después de crear, se actualizará automáticamente el stream
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
+              // Cerrar sesión y navegar a login en el siguiente frame
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                try {
+                  await AuthService.signOutAndClearRememberMe();
+                } catch (_) {}
+                if (mounted) {
+                  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                    MaterialPageRoute(
+                        builder: (context) => const LoginScreen()),
+                    (route) => false,
                   );
-                },
+                }
+              });
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
               );
             }
 
@@ -141,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _showOnboarding() async {
     // Mostrar diálogo de confirmación
-    final bool? shouldShowOnboarding = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(
@@ -202,31 +206,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-
-    if (shouldShowOnboarding == true) {
-      // Navegar al onboarding
-      Navigator.of(context).push(
-        PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              const OnboardingScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            const begin = Offset(1.0, 0.0);
-            const end = Offset.zero;
-            const curve = Curves.easeInOut;
-
-            var tween = Tween(begin: begin, end: end).chain(
-              CurveTween(curve: curve),
-            );
-
-            return SlideTransition(
-              position: animation.drive(tween),
-              child: child,
-            );
-          },
-          transitionDuration: const Duration(milliseconds: 500),
-        ),
-      );
-    }
   }
 
   Future<void> _showGuideTutorial() async {
@@ -318,119 +297,105 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _handleLogout() async {
-    // Mostrar diálogo de confirmación
-    final bool? shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(
-                Icons.logout,
-                color: Colors.red,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text('Cerrar sesión'),
-          ],
-        ),
-        content: const Text(
-          '¿Estás seguro de que quieres cerrar sesión?\n\nTendrás que volver a iniciar sesión para acceder a tu perfil y guías.',
-          style: TextStyle(fontSize: 16),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text(
-              'Cancelar',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Cerrar sesión',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
+  void _showPreferences() {
+    // Analytics: Usuario accede a preferencias
+    AnalyticsService.trackEvent('preferences_screen_opened');
+
+    // Navegar a la pantalla de preferencias
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const PreferencesScreen(),
       ),
     );
+  }
 
-    // Si el usuario confirmó, proceder con el cierre de sesión
-    if (shouldLogout == true) {
-      try {
-        // Mostrar indicador de carga
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                SizedBox(width: 16),
-                Text('Cerrando sesión...'),
-              ],
+  Future<void> _handleLogout() async {
+    // Mostrar diálogo de confirmación
+    DialogUtils.showCupertinoConfirmation(
+      context: context,
+      title: 'Cerrar sesión',
+      content:
+          '¿Estás seguro de que quieres cerrar sesión?\n\nTendrás que volver a iniciar sesión para acceder a tu perfil y guías.',
+      confirmLabel: 'Cerrar sesión',
+      confirmColor: Colors.red,
+    ).then((confirmed) async {
+      if (confirmed == true) {
+        try {
+          // Mostrar indicador de carga
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 16),
+                  Text('Cerrando sesión...'),
+                ],
+              ),
+              duration: Duration(seconds: 2),
             ),
-            duration: Duration(seconds: 3),
-          ),
-        );
+          );
 
-        await AuthService.signOutAndClearRememberMe();
+          // Registrar el logout en analytics
+          await AnalyticsService.trackLogout();
 
-        // Ocultar el snackbar de carga
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          // Cerrar sesión usando AuthService
+          await AuthService.signOut();
 
-        // Navegar a la pantalla de login directamente y limpiar el historial
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-          (route) => false,
-        );
-      } catch (e) {
-        // Ocultar el snackbar de carga
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          // Ocultar el snackbar de carga
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 8),
-                Expanded(child: Text('Error al cerrar sesión: $e')),
-              ],
+          // Mostrar mensaje de éxito
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('Sesión cerrada correctamente'),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
             ),
-            backgroundColor: Colors.red,
-          ),
-        );
+          );
+
+          // Esperar un momento para mostrar el mensaje
+          await Future.delayed(const Duration(seconds: 1));
+
+          // Forzar navegación directa al LoginScreen, bypaseando app_wrapper
+          if (mounted) {
+            // Usar el navigator raíz para asegurar que llega al LoginScreen
+            Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => const LoginScreen(),
+              ),
+              (route) => false, // Limpia completamente el stack de navegación
+            );
+          }
+        } catch (e) {
+          // Ocultar el snackbar de carga en caso de error
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('Error al cerrar sesión: $e')),
+                ],
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
-    }
+    });
   }
 
   Widget _buildProfileScreen(
@@ -875,6 +840,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
+                              onPressed: _showPreferences,
+                              icon: const Icon(Icons.settings,
+                                  color: Colors.orange),
+                              label: const Text('Preferencias de viaje',
+                                  style: TextStyle(color: Colors.orange)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.orange),
+                                foregroundColor: Colors.orange,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
                               onPressed: _handleLogout,
                               icon: const Icon(Icons.logout, color: Colors.red),
                               label: const Text('Cerrar sesión',
@@ -892,60 +875,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ],
                     ),
                   ),
-                  // Opciones para resetear tutoriales (solo en modo debug)
-                  if (const bool.fromEnvironment('dart.vm.product') ==
-                      false) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 4),
-                      child: Center(
-                        child: TextButton(
-                          onPressed: () async {
-                            await OnboardingService.resetOnboarding();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Tutorial inicial reseteado - reinicia la app para verlo'),
-                                backgroundColor: Colors.orange,
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            'Resetear tutorial inicial (Debug)',
-                            style: TextStyle(
-                                color: Colors.orange,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                                decoration: TextDecoration.underline),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Center(
-                        child: TextButton(
-                          onPressed: () async {
-                            await GuideTutorialService.resetGuideTutorial();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Tutorial de guías reseteado - se mostrará la próxima vez que entres a una guía'),
-                                backgroundColor: Colors.green,
-                              ),
-                            );
-                          },
-                          child: const Text(
-                            'Resetear tutorial de guías (Debug)',
-                            style: TextStyle(
-                                color: Colors.green,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                                decoration: TextDecoration.underline),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+
                   // Botón eliminar cuenta minimalista
                   Padding(
                     padding: const EdgeInsets.only(top: 8, bottom: 8),
@@ -1230,25 +1160,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
 
-        await AuthService.deleteAccount();
+        final ok = await AuthService.deleteAccount();
 
         // Ocultar el snackbar de carga
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-        // Mostrar mensaje de éxito
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 8),
-                Text('Cuenta eliminada correctamente'),
-              ],
+        if (ok) {
+          // Mostrar mensaje de éxito
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('Cuenta eliminada correctamente'),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
             ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.white),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('No se pudo eliminar la cuenta')),
+                ],
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
 
         // Esperar un momento para mostrar el mensaje de éxito
         await Future.delayed(const Duration(seconds: 2));

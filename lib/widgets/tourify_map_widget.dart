@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import '../config/app_colors.dart';
-import '../services/location_service.dart';
+import 'package:tourify_flutter/config/app_colors.dart';
+import 'package:tourify_flutter/services/location_service.dart';
 
 /// Widget personalizado para mostrar un mapa con la estética de Tourify
 class TourifyMapWidget extends StatefulWidget {
@@ -97,7 +97,7 @@ class _TourifyMapWidgetState extends State<TourifyMapWidget> {
     setState(() {
       _mapController = controller;
     });
-    
+
     if (widget.onMapCreated != null) {
       widget.onMapCreated!(controller);
     }
@@ -123,7 +123,7 @@ class _TourifyMapWidgetState extends State<TourifyMapWidget> {
         }
       ]
       ''';
-      
+
       await _mapController!.setMapStyle(style);
     } catch (e) {
       print('Error aplicando estilo al mapa: $e');

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../services/collaborators_service.dart';
 import 'package:flutter/services.dart';
-import '../utils/email_validator.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:tourify_flutter/services/collaborators_service.dart';
+import 'package:flutter/services.dart';
+import 'package:tourify_flutter/utils/email_validator.dart';
+import 'package:tourify_flutter/utils/dialog_utils.dart';
 
 class CollaboratorsModal extends StatefulWidget {
   final String guideId;
@@ -784,7 +787,18 @@ class _CollaboratorsModalState extends State<CollaboratorsModal>
             CupertinoButton(
               padding: EdgeInsets.zero,
               minSize: 32,
-              onPressed: () => _showRemoveCollaboratorDialog(email),
+              onPressed: () => DialogUtils.showCupertinoConfirmation(
+                context: context,
+                title: 'Eliminar colaborador',
+                content:
+                    '¿Estás seguro de que quieres eliminar a $email de esta guía?',
+                confirmLabel: 'Eliminar',
+                confirmColor: Colors.red,
+              ).then((confirmed) {
+                if (confirmed == true) {
+                  _removeCollaborator(email);
+                }
+              }),
               child: Container(
                 width: 32,
                 height: 32,

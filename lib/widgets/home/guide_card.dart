@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-
-import '../../config/app_colors.dart';
+import 'package:tourify_flutter/config/app_colors.dart';
+import 'package:flutter/services.dart';
 
 class GuideCard extends StatelessWidget {
   final String title;

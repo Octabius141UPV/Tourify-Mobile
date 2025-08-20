@@ -1,7 +1,115 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../../data/activity.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:tourify_flutter/data/activity.dart';
+import 'package:tourify_flutter/config/app_colors.dart';
+
+/// Configuración global: usar pines "clásicos numerados" (aspecto estándar con número).
+const bool kUseClassicNumberedPins = true;
+
+/// Tamaño base en píxeles del pin clásico numerado.
+const double _kClassicPinSize = 150.0; // más grande para mejor legibilidad
+const double _kClassicPinWidth = 72.0; // diámetro del círculo
+const double _kClassicPinHeight = 110.0; // hasta la punta
+
+/// Genera un pin clásico con número centrado.
+Future<BitmapDescriptor> _createClassicNumberedPin(
+    int number, Color color) async {
+  final ui.PictureRecorder recorder = ui.PictureRecorder();
+  final Canvas canvas = Canvas(recorder);
+
+  const double size = 180.0; // Más grande aún
+  const double centerX = size / 2;
+  const double centerY = size / 2;
+  const double borderWidth = 5.0; // Borde un poco más grueso
+
+  // ----- BORDE BLANCO -----
+  final Paint borderPaint = Paint()
+    ..color = Colors.white
+    ..style = PaintingStyle.fill;
+
+  // Círculo del borde blanco (más grande)
+  canvas.drawCircle(
+    Offset(centerX, centerY - 12),
+    44.0 + borderWidth,
+    borderPaint,
+  );
+
+  // Punta del borde blanco (triángulo más grande)
+  final Path borderPath = Path();
+  borderPath.moveTo(centerX - 22 - borderWidth, centerY + 20);
+  borderPath.lineTo(centerX, centerY + 50);
+  borderPath.lineTo(centerX + 22 + borderWidth, centerY + 20);
+  borderPath.close();
+  canvas.drawPath(borderPath, borderPaint);
+
+  // ----- PIN DE COLOR -----
+  final Paint pinPaint = Paint()
+    ..color = color
+    ..style = PaintingStyle.fill;
+
+  // Círculo principal
+  canvas.drawCircle(
+    Offset(centerX, centerY - 12),
+    44.0,
+    pinPaint,
+  );
+
+  // Punta del pin (triángulo)
+  final Path pinPath = Path();
+  pinPath.moveTo(centerX - 22, centerY + 20);
+  pinPath.lineTo(centerX, centerY + 45);
+  pinPath.lineTo(centerX + 22, centerY + 20);
+  pinPath.close();
+  canvas.drawPath(pinPath, pinPaint);
+
+  // ----- CÍRCULO BLANCO PARA EL NÚMERO -----
+  final Paint numberBgPaint = Paint()
+    ..color = Colors.white
+    ..style = PaintingStyle.fill;
+
+  canvas.drawCircle(
+    Offset(centerX, centerY - 12),
+    28.0, // Círculo más grande para el número
+    numberBgPaint,
+  );
+
+  // ----- NÚMERO -----
+  final textPainter = TextPainter(
+    text: TextSpan(
+      text: number.toString(),
+      style: TextStyle(
+        color: color,
+        fontSize: 32.0, // Texto más grande
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  );
+
+  textPainter.layout();
+  final textOffset = Offset(
+    centerX - textPainter.width / 2,
+    centerY - 12 - textPainter.height / 2,
+  );
+  textPainter.paint(canvas, textOffset);
+
+  // Convertir a imagen
+  final ui.Picture picture = recorder.endRecording();
+  final ui.Image image = await picture.toImage(size.toInt(), size.toInt());
+  final ByteData? byteData =
+      await image.toByteData(format: ui.ImageByteFormat.png);
+  final Uint8List bytes = byteData!.buffer.asUint8List();
+
+  return BitmapDescriptor.fromBytes(bytes);
+}
 
 String limpiarNombreActividad(String nombre) {
   final palabrasProhibidas = [
@@ -95,9 +203,21 @@ Future<BitmapDescriptor> createNumberedMarker(int number,
   borderPinPath.close();
   canvas.drawPath(borderPinPath, borderPaint);
 
-  // Círculo principal del pin
+  // Crear colores más claros y más oscuros para un degradado más rico
+  final hsl = HSLColor.fromColor(pinColor);
+  final lighter =
+      hsl.withLightness((hsl.lightness + 0.18).clamp(0.0, 1.0)).toColor();
+  final darker =
+      hsl.withLightness((hsl.lightness - 0.18).clamp(0.0, 1.0)).toColor();
+
+  // Círculo principal del pin con degradado realista (de arriba a abajo)
   final Paint pinPaint = Paint()
-    ..color = pinColor
+    ..shader = ui.Gradient.linear(
+      Offset(centerX, startY),
+      Offset(centerX, startY + 50),
+      [lighter, pinColor, darker],
+      [0.0, 0.5, 1.0],
+    )
     ..style = PaintingStyle.fill;
 
   canvas.drawCircle(
@@ -114,9 +234,9 @@ Future<BitmapDescriptor> createNumberedMarker(int number,
   pinPath.close();
   canvas.drawPath(pinPath, pinPaint);
 
-  // Círculo interior blanco
+  // Círculo interior translúcido para un borde suave
   final Paint innerCirclePaint = Paint()
-    ..color = Colors.white
+    ..color = Colors.white.withOpacity(0.9)
     ..style = PaintingStyle.fill;
 
   canvas.drawCircle(
@@ -125,12 +245,28 @@ Future<BitmapDescriptor> createNumberedMarker(int number,
     innerCirclePaint,
   );
 
+  // Brillo superior (efecto glossy)
+  final glossPaint = Paint()
+    ..shader = ui.Gradient.linear(
+      Offset(centerX, startY + 8),
+      Offset(centerX, startY + 25),
+      [Colors.white.withOpacity(0.6), Colors.white.withOpacity(0.0)],
+    );
+  canvas.drawCircle(
+    Offset(centerX, startY + 25),
+    (pinWidth / 2) - 8,
+    glossPaint,
+  );
+
   // Número en el centro
   final textStyle = TextStyle(
     fontSize: 24,
-    color: pinColor,
+    color: Colors.white,
     fontWeight: FontWeight.w900,
     fontFamily: 'Roboto',
+    shadows: [
+      const Shadow(offset: Offset(0, 1), blurRadius: 2, color: Colors.black45),
+    ],
   );
 
   final textSpan = TextSpan(text: number.toString(), style: textStyle);
@@ -210,6 +346,11 @@ Future<BitmapDescriptor> createCategoryMarker(Activity activity, int number,
   final categoryInfo = _getCategoryInfo(activity.category);
   // Si baseColor está definido, se usa para el pin (por ejemplo, para colorear por día)
   final color = baseColor ?? categoryInfo['color'] as Color;
+
+  // Si se ha activado el modo clásico numerado, generar pin sencillo con número
+  if (kUseClassicNumberedPins) {
+    return _createClassicNumberedPin(number, color);
+  }
 
   return createNumberedMarker(
     number,

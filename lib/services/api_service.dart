@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:tourify_flutter/services/auth_service.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:tourify_flutter/config/api_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiService {
   // Usar ApiConfig en lugar de configuración local
@@ -33,9 +35,62 @@ class ApiService {
       }
     } else {
       print('Debug: Usuario no está autenticado');
+      // Añadir modo invitado con bypass seguro
+      headers['x-guest-mode'] = 'true';
+      final fingerprint = await _getOrCreateDeviceFingerprint();
+      if (fingerprint != null && fingerprint.isNotEmpty) {
+        headers['x-device-fingerprint'] = fingerprint;
+      }
+      final guestAppKey = dotenv.env['GUEST_APP_KEY'];
+      if (guestAppKey != null && guestAppKey.isNotEmpty) {
+        headers['x-app-key'] = guestAppKey;
+      }
     }
 
     return headers;
+  }
+
+  // Obtener guías recientes desde el backend (evita reglas de Firestore en cliente)
+  Future<List<Map<String, dynamic>>> fetchRecentGuides() async {
+    try {
+      final headers = await _getHeaders();
+      final resp =
+          await http.get(Uri.parse('$baseUrl/guides/recent'), headers: headers);
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body);
+        final List list = (data['guides'] ?? []) as List;
+        return list
+            .map((e) => (e as Map).map((k, v) => MapEntry(k.toString(), v)))
+            .cast<Map<String, dynamic>>()
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Genera o recupera un fingerprint persistente para el dispositivo
+  Future<String?> _getOrCreateDeviceFingerprint() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final existing = prefs.getString('device_fingerprint');
+      if (existing != null && existing.isNotEmpty) {
+        return existing;
+      }
+      // Generar string pseudo-aleatorio estable
+      final rnd = Random.secure();
+      final randomBytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final seed =
+          '${now}:${rnd.nextInt(1 << 32)}:${base64UrlEncode(randomBytes)}';
+      final fp = base64UrlEncode(utf8.encode(seed)).replaceAll('=', '');
+      await prefs.setString('device_fingerprint', fp);
+      return fp;
+    } catch (e) {
+      print('Error generando fingerprint local: $e');
+      return null;
+    }
   }
 
   // Obtener actividades para descubrir con streaming
@@ -49,6 +104,7 @@ class ApiService {
     List<String>? discardedTitles,
     int? travelers,
     List<String>? travelModes,
+    String? travelIntensity,
   }) async* {
     final activities = <dynamic>[];
 
@@ -71,13 +127,11 @@ class ApiService {
       }
 
       if (existingTitles != null && existingTitles.isNotEmpty) {
-        queryParams['existingTitles'] =
-            Uri.encodeComponent(json.encode(existingTitles));
+        queryParams['existingTitles'] = json.encode(existingTitles);
       }
 
       if (discardedTitles != null && discardedTitles.isNotEmpty) {
-        queryParams['discardedTitles'] =
-            Uri.encodeComponent(json.encode(discardedTitles));
+        queryParams['discardedTitles'] = json.encode(discardedTitles);
       }
 
       if (travelers != null) {
@@ -85,8 +139,11 @@ class ApiService {
       }
 
       if (travelModes != null && travelModes.isNotEmpty) {
-        queryParams['travelModes'] =
-            Uri.encodeComponent(json.encode(travelModes));
+        queryParams['travelModes'] = json.encode(travelModes);
+      }
+
+      if (travelIntensity != null && travelIntensity.isNotEmpty) {
+        queryParams['travelIntensity'] = travelIntensity;
       }
 
       // Usar endpoint autenticado si el usuario está logueado, anónimo si no
@@ -217,6 +274,7 @@ class ApiService {
     List<String>? discardedTitles,
     int? travelers,
     List<String>? travelModes,
+    String? travelIntensity,
   }) async {
     // Usar el método de streaming pero esperar a todas las actividades
     List<dynamic> allActivities = [];
@@ -231,6 +289,7 @@ class ApiService {
       discardedTitles: discardedTitles,
       travelers: travelers,
       travelModes: travelModes,
+      travelIntensity: travelIntensity,
     )) {
       allActivities = activities;
     }
@@ -366,6 +425,41 @@ class ApiService {
       return {
         'success': false,
         'error': 'Error de conexión: ${e.toString()}',
+      };
+    }
+  }
+
+  // Validar login en el backend (evita problemas de reglas en cliente)
+  Future<Map<String, dynamic>> validateLogin({String? expectedProvider}) async {
+    try {
+      final headers = await _getHeaders();
+      final body = <String, dynamic>{};
+      if (expectedProvider != null && expectedProvider.isNotEmpty) {
+        body['expectedProvider'] = expectedProvider;
+      }
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/validate-login'),
+        headers: headers,
+        body: json.encode(body),
+      );
+
+      final data = json.decode(response.body);
+      if (response.statusCode == 200 && data is Map<String, dynamic>) {
+        return data;
+      }
+
+      // Devolver estructura uniforme de error
+      return {
+        'success': false,
+        'error': data['error'] ?? 'unknown_error',
+        'message': data['message'] ?? 'Error validando login',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'network_error',
+        'message': e.toString(),
       };
     }
   }

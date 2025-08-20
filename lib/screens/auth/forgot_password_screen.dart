@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:tourify_flutter/screens/login_screen.dart';
+import 'package:tourify_flutter/screens/auth/login_screen.dart';
 
-import '../config/app_colors.dart';
-import '../utils/email_validator.dart';
+import '../../config/app_colors.dart';
+import '../../utils/email_validator.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});

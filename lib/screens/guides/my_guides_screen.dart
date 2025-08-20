@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../widgets/common/custom_bottom_navigation_bar.dart';
+import 'package:tourify_flutter/widgets/common/custom_bottom_navigation_bar.dart';
 import 'package:tourify_flutter/services/navigation_service.dart';
-import 'package:tourify_flutter/screens/guide_detail_screen.dart';
-import '../services/collaborators_service.dart';
-import '../services/api_service.dart';
-import '../config/app_colors.dart';
+import 'package:tourify_flutter/screens/guides/guide_detail_screen.dart';
+import 'package:tourify_flutter/services/collaborators_service.dart';
+import 'package:tourify_flutter/services/api_service.dart';
+import 'package:tourify_flutter/config/app_colors.dart';
+import 'package:tourify_flutter/utils/dialog_utils.dart';
 
 class MyGuidesScreen extends StatefulWidget {
   const MyGuidesScreen({super.key});
@@ -168,12 +169,27 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
 
       // Ordenar por fecha de compartido (más reciente primero)
       sharedGuides.sort((a, b) {
-        final aDate = a['sharedAt'] ?? DateTime.now();
-        final bDate = b['sharedAt'] ?? DateTime.now();
-        if (aDate is Timestamp && bDate is Timestamp) {
-          return bDate.toDate().compareTo(aDate.toDate());
+        DateTime _toDt(dynamic v) {
+          if (v is Timestamp) return v.toDate();
+          if (v is DateTime) return v;
+          if (v is String)
+            return DateTime.tryParse(v) ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+          if (v is Map) {
+            final s = v['_seconds'] ?? v['seconds'];
+            final n = v['_nanoseconds'] ?? v['nanoseconds'];
+            if (s is num) {
+              final ms =
+                  (s * 1000).toInt() + ((n is num) ? (n / 1e6).floor() : 0);
+              return DateTime.fromMillisecondsSinceEpoch(ms);
+            }
+          }
+          return DateTime.fromMillisecondsSinceEpoch(0);
         }
-        return 0;
+
+        final aDate = _toDt(a['sharedAt']);
+        final bDate = _toDt(b['sharedAt']);
+        return bDate.compareTo(aDate);
       });
 
       setState(() {
@@ -197,8 +213,8 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
       if (data == null) return;
 
       final guideId = data['guideId'] ?? doc.id;
-      final sharedAt = data['sharedAt'];
-      final sharedBy = data['sharedBy'] ?? '';
+      // final sharedAt = data['sharedAt'];
+      // final sharedBy = data['sharedBy'] ?? '';
       final role =
           data['role'] ?? 'viewer'; // Obtener rol directamente del documento
 
@@ -725,8 +741,24 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
           onTap: () {
+            // Registrar última apertura
+            try {
+              final user = FirebaseAuth.instance.currentUser;
+              if (user != null) {
+                FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(user.uid)
+                    .collection('recentlyOpened')
+                    .doc(guide['id'].toString())
+                    .set({
+                  'guideId': guide['id'].toString(),
+                  'openedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+              }
+            } catch (_) {}
             Navigator.of(context).push(
               MaterialPageRoute(
+                settings: RouteSettings(name: 'Guide: $title'),
                 builder: (context) => GuideDetailScreen(
                   guideId: guide['id'].toString(),
                   guideTitle: title,
@@ -1004,72 +1036,18 @@ class _MyGuidesScreenState extends State<MyGuidesScreen>
   }
 
   void _confirmarEliminarGuia(Map<String, dynamic> guide) {
-    showDialog(
+    DialogUtils.showCupertinoConfirmation(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red[100],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.delete_rounded,
-                color: Colors.red[700],
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Text('¿Eliminar guía?'),
-          ],
-        ),
-        content: Text(
+      title: '¿Eliminar guía?',
+      content:
           '¿Seguro que quieres eliminar la guía "${guide['title']}"? Esta acción no se puede deshacer.',
-          style: const TextStyle(fontSize: 16),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              'Cancelar',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ),
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.red[400]!, Colors.red[600]!],
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: ElevatedButton.icon(
-              onPressed: () async {
-                Navigator.pop(context);
-                await _eliminarGuia(guide);
-              },
-              icon: const Icon(Icons.delete_rounded,
-                  size: 18, color: Colors.white),
-              label: const Text(
-                'Eliminar',
-                style:
-                    TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                shadowColor: Colors.transparent,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+      confirmLabel: 'Eliminar',
+      confirmColor: Colors.red,
+    ).then((confirmed) async {
+      if (confirmed == true) {
+        await _eliminarGuia(guide);
+      }
+    });
   }
 
   Future<void> _eliminarGuia(Map<String, dynamic> guide) async {

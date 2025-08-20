@@ -1,5 +1,5 @@
+import 'package:tourify_flutter/data/activity.dart';
 import 'package:flutter/material.dart';
-import '../data/activity.dart';
 
 /// Función para determinar si una actividad es cultural
 bool isCulturalActivity(Activity activity) {

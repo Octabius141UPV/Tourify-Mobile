@@ -1,4 +1,5 @@
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Activity {
   final String id;
@@ -74,6 +75,33 @@ class Activity {
             (loc['lat'] as num).toDouble(), (loc['lng'] as num).toDouble());
       }
     }
+    DateTime? _parseDateTime(dynamic value) {
+      if (value == null) return null;
+      // Firestore Timestamp (en app)
+      if (value is Timestamp) {
+        return value.toDate();
+      }
+      // DateTime directo
+      if (value is DateTime) {
+        return value;
+      }
+      // String ISO8601
+      if (value is String) {
+        return DateTime.tryParse(value);
+      }
+      // JSON de Firebase Admin: { _seconds, _nanoseconds } o { seconds, nanoseconds }
+      if (value is Map) {
+        final seconds = value['_seconds'] ?? value['seconds'];
+        final nanos = value['_nanoseconds'] ?? value['nanoseconds'];
+        if (seconds is num) {
+          final ms = (seconds * 1000).toInt() +
+              ((nanos is num) ? (nanos / 1000000).floor() : 0);
+          return DateTime.fromMillisecondsSinceEpoch(ms);
+        }
+      }
+      return null;
+    }
+
     return Activity(
       id: id,
       title: title,
@@ -101,8 +129,8 @@ class Activity {
           : (data['likes'] is double)
               ? data['likes'].toInt()
               : 0,
-      startTime: data['startTime']?.toDate(),
-      endTime: data['endTime']?.toDate(),
+      startTime: _parseDateTime(data['startTime']),
+      endTime: _parseDateTime(data['endTime']),
       price: data['price']?.toString(),
       location: location,
       googleRating: data['googleRating'] != null

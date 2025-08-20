@@ -1,29 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
-import 'package:clarity_flutter/clarity_flutter.dart';
+import 'package:clarity_flutter/clarity_flutter.dart' as clarity;
 // import 'package:flutter_smartlook/flutter_smartlook.dart';  // Temporalmente comentado
 import 'config/firebase_config.dart';
+
 import 'config/app_colors.dart';
 import 'services/navigation_service.dart';
-import 'services/auth_service.dart';
 import 'services/analytics_service.dart';
 import 'services/navigation_observer.dart';
-import 'screens/login_screen.dart';
-import 'screens/register_screen.dart';
-import 'screens/verify_email_screen.dart';
-import 'screens/forgot_password_screen.dart';
-import 'screens/home_screen.dart';
-import 'screens/profile_screen.dart';
-import 'screens/my_guides_screen.dart';
-import 'screens/guide_detail_screen.dart';
-import 'screens/app_wrapper.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/auth/register_screen.dart';
+import 'screens/auth/verify_email_screen.dart';
+import 'screens/auth/forgot_password_screen.dart';
+import 'screens/main/home_screen.dart';
+import 'screens/main/profile_screen.dart';
+import 'screens/guides/my_guides_screen.dart';
+import 'screens/guides/guide_detail_screen.dart';
+import 'screens/onboarding/interactive_onboarding_screen.dart';
+import 'screens/main/app_wrapper.dart';
+// import 'utils/onboarding_debug.dart'; // Para testing del onboarding
 import 'package:app_links/app_links.dart';
 import 'dart:async';
 import 'package:flutter/rendering.dart';
+import 'services/auth_service.dart'; // Added import for AuthService
+import 'package:firebase_auth/firebase_auth.dart';
 
 void main() async {
   try {
@@ -31,6 +34,9 @@ void main() async {
 
     // Cargar variables de entorno
     await dotenv.load(fileName: ".env");
+    print('API_BASE_URL al iniciar:  [32m [1m' +
+        (dotenv.env['API_BASE_URL'] ?? 'NO DEFINIDO') +
+        '\u001b[0m'); // <-- Añadido para debug visual
 
     // Inicializar Firebase
     final firebaseOptions = await FirebaseConfig.firebaseOptions;
@@ -42,27 +48,33 @@ void main() async {
     // Inicializar servicio de analytics
     await AnalyticsService.initialize();
 
-    // Configurar Microsoft Clarity
-    final clarityProjectId = dotenv.env['CLARITY_PROJECT_ID'];
-    if (clarityProjectId != null &&
-        clarityProjectId.isNotEmpty &&
-        clarityProjectId != 'tu_clarity_project_id_aqui') {
-      final config = ClarityConfig(
-        projectId: clarityProjectId,
-        logLevel: LogLevel.Info,
-      );
+    // 🚀 DESARROLLO: Reseteo de onboarding deshabilitado para no forzar flujos
+    // await devResetOnboarding();
 
-      runApp(ClarityWidget(
+    // Obtener Project ID de Clarity (si existe)
+    final clarityProjectId = dotenv.env['CLARITY_PROJECT_ID'] ?? '';
+
+    Widget rootApp;
+
+    if (clarityProjectId.isNotEmpty &&
+        clarityProjectId != 'tu_clarity_project_id_aqui') {
+      // Usar ClarityWidget para inicializar y envolver la app
+      rootApp = clarity.ClarityWidget(
         app: const MyApp(),
-        clarityConfig: config,
-      ));
-      debugPrint(
-          'Microsoft Clarity configurado correctamente con ID: $clarityProjectId');
+        clarityConfig: clarity.ClarityConfig(
+          projectId: clarityProjectId,
+          logLevel: clarity.LogLevel.None, // Cambia a verbose para debug
+        ),
+      );
+      debugPrint('✅ ClarityWidget configurado con ID $clarityProjectId');
     } else {
+      // Ejecutar la app sin Clarity si no hay Project ID
       debugPrint(
-          'ID de proyecto de Clarity no configurado, ejecutando sin Clarity');
-      runApp(const MyApp());
+          'ℹ️ CLARITY_PROJECT_ID no establecido; ejecutando sin Clarity');
+      rootApp = const MyApp();
     }
+
+    runApp(rootApp);
   } catch (e, stackTrace) {
     debugPrint('Error durante la inicialización: $e');
     debugPrint('Stack trace: $stackTrace');
@@ -81,7 +93,7 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   StreamSubscription? _linkSubscription;
   late final AppLinks _appLinks;
-  static bool _pendingDeepLink = false;
+  // static bool _pendingDeepLink = false;
   // final Smartlook smartlook = Smartlook.instance;
 
   @override
@@ -120,9 +132,52 @@ class _MyAppState extends State<MyApp> {
       final uri = Uri.parse(link);
       print('Deep link recibido: $link');
 
+      // Verificar si es un deep link de Firebase Auth
+      if (AuthService.isFirebaseAuthDeepLink(link)) {
+        print('🔗 Deep link de Firebase Auth detectado');
+
+        // Verificar si estamos en onboarding usando el contexto
+        final navigator = NavigationService.navigatorKey.currentState;
+        final isInOnboarding = navigator?.context.mounted == true &&
+            (navigator != null
+                ? ModalRoute.of(navigator.context)
+                        ?.settings
+                        .name
+                        ?.contains('onboarding') ==
+                    true
+                : false);
+
+        print('🔍 Verificando contexto del deep link:');
+        print('  - Navigator null: ${navigator == null}');
+        print('  - Context mounted: ${navigator?.context.mounted}');
+        print(
+            '  - Current route: ${navigator != null ? ModalRoute.of(navigator.context)?.settings.name : 'null'}');
+        print('  - Is in onboarding: $isInOnboarding');
+        print(
+            '  - Callback registrado: ${AuthService.isCaptchaCallbackRegistered}');
+
+        // SIEMPRE preservar el onboarding si hay callback registrado
+        if (AuthService.isCaptchaCallbackRegistered) {
+          print('📱 Callback detectado, preservando onboarding');
+          AuthService.handleFirebaseAuthDeepLink(link,
+              preserveOnboarding: true);
+        } else if (isInOnboarding) {
+          print(
+              '📱 Detectado deep link durante onboarding, preservando contexto');
+          AuthService.handleFirebaseAuthDeepLink(link,
+              preserveOnboarding: true);
+        } else {
+          print('🏠 Deep link fuera del onboarding, navegando normalmente');
+          AuthService.handleFirebaseAuthDeepLink(link);
+        }
+        return;
+      } else {
+        print('❌ Deep link NO detectado como Firebase Auth');
+      }
+
       if (uri.scheme == 'tourify') {
         // Marcar que hay un deep link pendiente
-        _pendingDeepLink = true;
+        // _pendingDeepLink = true;
 
         if (uri.host == 'guide') {
           // Link para ver guía: tourify://guide/{guideId}?token={token}
@@ -136,7 +191,23 @@ class _MyAppState extends State<MyApp> {
           final token = uri.queryParameters['token'];
 
           if (guideId.isNotEmpty && token != null) {
-            NavigationService.handleJoinGuideLink(guideId, token);
+            // Registrar join pendiente para cubrir casos en que el Navigator aún no está listo
+            NavigationService.setPendingJoin(guideId: guideId, token: token);
+
+            // Si NO hay usuario autenticado, navegar inmediatamente a vista previa
+            final current = FirebaseAuth.instance.currentUser;
+            if (current == null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                NavigationService.navigateToGuidePreview(
+                  guideId: guideId,
+                  token: token,
+                  guideTitle: 'Guía compartida',
+                );
+              });
+            } else {
+              // Si hay usuario, intentar procesar el join completo
+              NavigationService.handleJoinGuideLink(guideId, token);
+            }
           } else {
             print('Error: guideId o token faltante en el deep link');
           }
@@ -144,17 +215,17 @@ class _MyAppState extends State<MyApp> {
 
         // Después de procesar el deep link, limpiar la bandera
         Future.delayed(const Duration(seconds: 2), () {
-          _pendingDeepLink = false;
+          // _pendingDeepLink = false;
         });
       }
     } catch (e) {
       print('Error al procesar link: $e');
-      _pendingDeepLink = false;
+      // _pendingDeepLink = false;
     }
   }
 
   // Método para obtener el estado de deep link pendiente
-  static bool get hasPendingDeepLink => _pendingDeepLink;
+  // static bool get hasPendingDeepLink => _pendingDeepLink;
 
   @override
   void dispose() {
@@ -170,6 +241,9 @@ class _MyAppState extends State<MyApp> {
       navigatorKey: NavigationService.navigatorKey,
       navigatorObservers: [
         AnalyticsNavigatorObserver(), // Tracking automático de navegación
+        // ClarityNavigatorObserver eliminado: ahora AnalyticsService maneja screen names
+        if (AnalyticsService.observer != null)
+          AnalyticsService.observer!, // Firebase Analytics observer
       ],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -218,6 +292,9 @@ class _MyAppState extends State<MyApp> {
             break;
           case '/forgot-password':
             page = const ForgotPasswordScreen();
+            break;
+          case '/onboarding':
+            page = const InteractiveOnboardingScreen();
             break;
           case '/home':
             page = const HomeScreen();

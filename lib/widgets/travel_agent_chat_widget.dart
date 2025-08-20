@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:tourify_flutter/screens/other/premium_subscription_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-import '../screens/premium_subscription_screen.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'premium_feature_modal.dart';
@@ -282,7 +284,8 @@ class _TravelAgentChatWidgetState extends State<TravelAgentChatWidget> {
                                       showDialog(
                                         context: context,
                                         builder: (context) =>
-                                            const PremiumFeatureModal(),
+                                            const PremiumFeatureModal(
+                                                source: 'travel_agent_chat'),
                                       );
                                     },
                                   ),

@@ -2,6 +2,9 @@ import Flutter
 import UIKit
 import GoogleSignIn
 import GoogleMaps
+import UserNotifications
+import Firebase
+import FirebaseMessaging
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -10,12 +13,23 @@ import GoogleMaps
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     
-    // Configure Google Sign-In
-    if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-       let plist = NSDictionary(contentsOfFile: path),
-       let clientId = plist["CLIENT_ID"] as? String {
-        let config = GIDConfiguration(clientID: clientId)
-        GIDSignIn.sharedInstance.configuration = config
+    // Configurar Firebase
+    FirebaseApp.configure()
+    
+    // Configurar Google Sign-In usando el helper
+    GoogleSignInHelper.shared.configureGoogleSignIn()
+    
+    // Configurar notificaciones push para evitar reCAPTCHA
+    UNUserNotificationCenter.current().delegate = self
+    application.registerForRemoteNotifications()
+    
+    // Solicitar permisos de notificación
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+      if granted {
+        print("✅ Permisos de notificación concedidos")
+      } else {
+        print("❌ Permisos de notificación denegados: \(error?.localizedDescription ?? "")")
+      }
     }
     
     GMSServices.provideAPIKey("AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM")
@@ -28,5 +42,29 @@ import GoogleMaps
       return true
     }
     return super.application(app, open: url, options: options)
+  }
+  
+  // Manejar token de notificaciones push
+  override func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    let tokenParts = deviceToken.map { data in String(format: "%02.2hhx", data) }
+    let token = tokenParts.joined()
+    print("📱 Device Token: \(token)")
+    
+    // Enviar token a Firebase Messaging
+    Messaging.messaging().apnsToken = deviceToken
+  }
+  
+  override func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    print("❌ Failed to register for remote notifications: \(error)")
+  }
+  
+  // Manejar notificaciones cuando la app está en primer plano
+  override func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+    completionHandler([.alert, .badge, .sound])
+  }
+  
+  // Manejar toque en notificación
+  override func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+    completionHandler()
   }
 }

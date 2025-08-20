@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/collaborators_service.dart';
-import '../utils/email_validator.dart';
+import 'package:tourify_flutter/services/collaborators_service.dart';
+import 'package:tourify_flutter/utils/email_validator.dart';
+import 'package:tourify_flutter/utils/dialog_utils.dart';
 
 class CollaboratorsScreen extends StatefulWidget {
   final String guideId;
@@ -117,24 +118,12 @@ class _CollaboratorsScreenState extends State<CollaboratorsScreen>
 
   Future<void> _removeCollaborator(String collaboratorId) async {
     // Mostrar diálogo de confirmación
-    final confirmed = await showDialog<bool>(
+    final confirmed = await DialogUtils.showCupertinoConfirmation(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar eliminación'),
-        content: const Text(
-            '¿Estás seguro de que quieres eliminar este colaborador?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Eliminar'),
-          ),
-        ],
-      ),
+      title: 'Confirmar eliminación',
+      content: '¿Estás seguro de que quieres eliminar este colaborador?',
+      confirmLabel: 'Eliminar',
+      confirmColor: Colors.red,
     );
 
     if (confirmed == true) {

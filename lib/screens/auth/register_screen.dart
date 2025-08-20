@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:tourify_flutter/screens/verify_email_screen.dart';
-import 'package:tourify_flutter/screens/login_screen.dart';
-import '../utils/email_validator.dart';
+import 'package:tourify_flutter/screens/auth/verify_email_screen.dart';
+import 'package:tourify_flutter/screens/auth/login_screen.dart';
+import '../../utils/email_validator.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});

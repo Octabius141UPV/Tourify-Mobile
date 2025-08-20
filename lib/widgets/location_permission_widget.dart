@@ -1,6 +1,7 @@
+import 'package:tourify_flutter/config/app_colors.dart';
+import 'package:tourify_flutter/services/location_service.dart';
 import 'package:flutter/material.dart';
-import '../config/app_colors.dart';
-import '../services/location_service.dart';
+import 'package:flutter/services.dart';
 
 /// Widget para solicitar permisos de ubicación de manera elegante
 class LocationPermissionWidget extends StatefulWidget {

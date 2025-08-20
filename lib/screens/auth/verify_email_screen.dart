@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:tourify_flutter/screens/login_screen.dart';
-import 'package:tourify_flutter/screens/home_screen.dart';
+import 'package:tourify_flutter/screens/auth/login_screen.dart';
+import 'package:tourify_flutter/screens/main/home_screen.dart';
 
 class VerifyEmailScreen extends StatefulWidget {
   const VerifyEmailScreen({super.key});

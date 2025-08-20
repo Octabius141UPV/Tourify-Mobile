@@ -1,5 +1,6 @@
+import 'package:tourify_flutter/utils/activity_utils.dart';
 import 'package:flutter/material.dart';
-import '../../utils/activity_utils.dart';
+import 'package:flutter/services.dart';
 
 class DaySelectorHeader extends StatelessWidget {
   final List<int> availableDays;

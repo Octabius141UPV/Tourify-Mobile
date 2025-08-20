@@ -14,6 +14,8 @@ class ActivityMapper {
       price: _parsePrice(apiActivity),
       duration: _parseDuration(apiActivity),
       tags: _parseTags(apiActivity),
+      order: _parseOrder(apiActivity),
+      timeSlot: _parseTimeSlot(apiActivity),
     );
   }
 
@@ -82,6 +84,25 @@ class ActivityMapper {
       }
     }
     return 120; // Valor por defecto: 2 horas
+  }
+
+  static int? _parseOrder(Map<String, dynamic> activity) {
+    if (activity['order'] == null) return null;
+    final value = activity['order'];
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  static String? _parseTimeSlot(Map<String, dynamic> activity) {
+    final value = activity['timeSlot'];
+    if (value == null) return null;
+    final s = value.toString().toLowerCase();
+    if (s == 'morning' || s == 'afternoon' || s == 'evening' || s == 'night') {
+      return s;
+    }
+    return null;
   }
 
   // Extraer tags

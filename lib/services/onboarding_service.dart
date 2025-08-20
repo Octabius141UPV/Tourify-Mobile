@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class OnboardingService {
   static const String _onboardingKey = 'has_completed_onboarding';
   static const String _onboardingVersionKey = 'onboarding_version';
+  static const String _welcomeScreenKey = 'has_seen_welcome_screen';
   static const int _currentOnboardingVersion =
       1; // Incrementar si cambias el onboarding
 
@@ -60,6 +61,39 @@ class OnboardingService {
     } catch (e) {
       print('Error checking first launch: $e');
       return true;
+    }
+  }
+
+  /// Verifica si el usuario ya vio la pantalla de bienvenida
+  static Future<bool> hasSeenWelcomeScreen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_welcomeScreenKey) ?? false;
+    } catch (e) {
+      print('Error checking welcome screen status: $e');
+      return false;
+    }
+  }
+
+  /// Marca la pantalla de bienvenida como vista
+  static Future<void> markWelcomeScreenSeen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_welcomeScreenKey, true);
+      print('Welcome screen marcada como vista');
+    } catch (e) {
+      print('Error marking welcome screen as seen: $e');
+    }
+  }
+
+  /// Resetea el estado de la pantalla de bienvenida (útil para testing)
+  static Future<void> resetWelcomeScreen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_welcomeScreenKey);
+      print('Welcome screen reseteada');
+    } catch (e) {
+      print('Error resetting welcome screen: $e');
     }
   }
 }

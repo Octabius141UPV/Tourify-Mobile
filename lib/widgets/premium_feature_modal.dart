@@ -1,10 +1,32 @@
+import 'package:tourify_flutter/services/analytics_service.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:clarity_flutter/clarity_flutter.dart';
 
 class PremiumFeatureModal extends StatelessWidget {
-  const PremiumFeatureModal({super.key});
+  final String? source;
+
+  const PremiumFeatureModal({
+    super.key,
+    this.source,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // 📊 TRACKING: Registrar vista del modal premium
+    AnalyticsService.trackEvent('premium_modal_opened', parameters: {
+      'source': source ?? 'unknown',
+    }).catchError((e) => debugPrint('Error tracking premium modal: $e'));
+
+    // 📊 CLARITY: Enviar evento personalizado para modal premium
+    try {
+      Clarity.sendCustomEvent('premium_modal_opened');
+      debugPrint(
+          '🔍 Clarity: premium_modal_opened sent from ${source ?? 'unknown'}');
+    } catch (e) {
+      debugPrint('⚠️ Error sending Clarity event: $e');
+    }
+
     return AlertDialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
@@ -113,7 +135,17 @@ class PremiumFeatureModal extends StatelessWidget {
           children: [
             Flexible(
               child: TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: () {
+                  // 📊 CLARITY: Enviar evento personalizado para cerrar modal
+                  try {
+                    Clarity.sendCustomEvent('premium_modal_dismissed');
+                    debugPrint('🔍 Clarity: premium_modal_dismissed sent');
+                  } catch (e) {
+                    debugPrint('⚠️ Error sending Clarity dismiss event: $e');
+                  }
+
+                  Navigator.pop(context);
+                },
                 child: const Text(
                   'Entendido',
                   style: TextStyle(
@@ -138,6 +170,25 @@ class PremiumFeatureModal extends StatelessWidget {
                       fontSize: 13, fontWeight: FontWeight.bold),
                 ),
                 onPressed: () {
+                  // 📊 TRACKING: Registrar clic en botón de pagar
+                  AnalyticsService.trackPremiumPaymentClick(
+                          source ?? 'feature_modal')
+                      .catchError((e) =>
+                          debugPrint('Error tracking payment click: $e'));
+
+                  // 📊 CLARITY: Enviar evento personalizado para clic en pagar
+                  try {
+                    Clarity.sendCustomEvent('premium_payment_click');
+                    if (source != null) {
+                      Clarity.setCustomTag('premium_click_source', source!);
+                    }
+                    debugPrint(
+                        '🔍 Clarity: premium_payment_click sent from ${source ?? 'feature_modal'}');
+                  } catch (e) {
+                    debugPrint(
+                        '⚠️ Error sending Clarity payment click event: $e');
+                  }
+
                   showDialog(
                     context: context,
                     builder: (context) => AlertDialog(
