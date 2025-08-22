@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:tourify_flutter/services/analytics_service.dart';
+import 'package:tourify_flutter/providers/premium_provider.dart';
 
 class PremiumSubscriptionScreen extends StatelessWidget {
   const PremiumSubscriptionScreen({super.key});
@@ -24,87 +27,45 @@ class PremiumSubscriptionScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Icono premium con animación
+              // Icono principal
               Container(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF0062FF), Color(0xFF0046CC)],
-                  ),
-                  borderRadius: BorderRadius.circular(50),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0062FF).withOpacity(0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+                  color: const Color(0xFF0062FF).withOpacity(0.1),
+                  shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.workspace_premium,
-                  size: 60,
-                  color: Colors.white,
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Título principal
-              const Text(
-                'Tourify Premium',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
+                  size: 80,
                   color: Color(0xFF0062FF),
                 ),
               ),
-
-              const SizedBox(height: 16),
-
-              // Mensaje de precio y suscripción
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFFFD700), Color(0xFFFFA000)],
-                  ),
-                  borderRadius: BorderRadius.circular(25),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFFFD700).withOpacity(0.3),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: const Text(
-                  'Suscríbete por solo 5 €/mes',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ),
-
               const SizedBox(height: 24),
 
-              // Descripción
-              Text(
-                'Disfruta de todas las funciones premium y lleva tu experiencia de viaje al siguiente nivel.',
+              // Título
+              const Text(
+                '¡Desbloquea todo el potencial de Tourify!',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A1A),
+                ),
                 textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+
+              // Subtítulo
+              const Text(
+                'Accede a funciones premium para crear mejores guías de viaje',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Colors.grey[600],
-                  height: 1.5,
+                  color: Color(0xFF666666),
                 ),
+                textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 32),
 
-              // Lista de funciones futuras
+              // Lista de beneficios
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -112,77 +73,113 @@ class PremiumSubscriptionScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
+                      color: Colors.black.withOpacity(0.05),
                       blurRadius: 10,
-                      offset: const Offset(0, 5),
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Funciones que vendrán:',
+                      'Con Premium tendrás:',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF0062FF),
+                        color: Color(0xFF1A1A1A),
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildFeatureItem(Icons.smart_toy, 'Asistente de viaje'),
-                    _buildFeatureItem(Icons.cloud_off, 'Uso sin conexión'),
-                    _buildFeatureItem(Icons.map, 'Exportación a Google Maps'),
-                    _buildFeatureItem(
-                        Icons.calendar_today, 'Sincronización con calendario'),
+                    _buildBenefit('🎯', 'Guías ilimitadas'),
+                    _buildBenefit('🤝', 'Colaboración en tiempo real'),
+                    _buildBenefit('📍', 'Actividades sin límite'),
+                    _buildBenefit('⚡', 'Sincronización rápida'),
+                    _buildBenefit('🎨', 'Personalización avanzada'),
+                    _buildBenefit('💾', 'Respaldo en la nube'),
+                    _buildBenefit('📱', 'Soporte prioritario'),
                   ],
                 ),
               ),
 
               const SizedBox(height: 32),
 
-              // Botón de suscripción simulado
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    // 📊 TRACKING: Registrar clic en botón de pagar
-                    AnalyticsService.trackPremiumPaymentClick(
-                            'subscription_screen')
-                        .catchError((e) =>
-                            debugPrint('Error tracking payment click: $e'));
-
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('¡Gracias por suscribirte!'),
-                        content: const Text(
-                            'Ahora tienes acceso a todas las funciones premium.'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Cerrar'),
+              // Botones de suscripción con RevenueCat
+              Consumer<PremiumProvider>(
+                builder: (context, premiumProvider, child) {
+                  if (premiumProvider.isPremium) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.green.shade300),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle,
+                              color: Colors.green.shade700),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '¡Ya eres usuario Premium!',
+                              style: TextStyle(
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     );
-                  },
-                  icon: const Icon(Icons.workspace_premium),
-                  label: const Text(
-                    'Suscribirse por 5 €/mes',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Color(0xFFFFA000),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+                  }
+
+                  final packages = premiumProvider.getAvailablePackages();
+                  if (packages.isEmpty) {
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      child: const Column(
+                        children: [
+                          CircularProgressIndicator(),
+                          SizedBox(height: 8),
+                          Text(
+                            'Cargando opciones de suscripción...',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      // Opciones de suscripción
+                      ...packages.map((package) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildSubscriptionOption(
+                              context,
+                              premiumProvider,
+                              package,
+                            ),
+                          )),
+
+                      const SizedBox(height: 16),
+
+                      // Botón para restaurar compras
+                      TextButton(
+                        onPressed: premiumProvider.isLoading
+                            ? null
+                            : () => _restorePurchases(context, premiumProvider),
+                        child: const Text(
+                          'Restaurar compras',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 16),
 
@@ -200,8 +197,8 @@ class PremiumSubscriptionScreen extends StatelessWidget {
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0062FF),
-                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.grey.shade300,
+                    foregroundColor: Colors.black87,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -216,22 +213,14 @@ class PremiumSubscriptionScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFeatureItem(IconData icon, String text) {
+  Widget _buildBenefit(String emoji, String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0062FF).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              icon,
-              size: 20,
-              color: const Color(0xFF0062FF),
-            ),
+          Text(
+            emoji,
+            style: const TextStyle(fontSize: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -239,10 +228,220 @@ class PremiumSubscriptionScreen extends StatelessWidget {
               text,
               style: const TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
+                color: Color(0xFF333333),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSubscriptionOption(
+    BuildContext context,
+    PremiumProvider premiumProvider,
+    Package package,
+  ) {
+    final isLoading = premiumProvider.isLoading;
+    final hasIntroPrice = package.storeProduct.introductoryPrice != null;
+    final period = premiumProvider.getSubscriptionPeriod(package);
+    final price = premiumProvider.getFormattedPrice(package);
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: hasIntroPrice ? Colors.orange : const Color(0xFF0062FF),
+          width: 2,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        color: hasIntroPrice
+            ? Colors.orange.shade50
+            : const Color(0xFF0062FF).withOpacity(0.05),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: isLoading
+              ? null
+              : () => _purchasePackage(context, premiumProvider, package),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                price,
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                              ),
+                              Text(
+                                '/$period',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Color(0xFF666666),
+                                ),
+                              ),
+                              if (hasIntroPrice) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Text(
+                                    'PRUEBA',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (hasIntroPrice) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Prueba gratis, luego $price/$period',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (isLoading)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      Icon(
+                        Icons.arrow_forward,
+                        color: hasIntroPrice
+                            ? Colors.orange
+                            : const Color(0xFF0062FF),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _purchasePackage(
+    BuildContext context,
+    PremiumProvider premiumProvider,
+    Package package,
+  ) async {
+    try {
+      // 📊 TRACKING: Registrar inicio de compra
+      AnalyticsService.trackPremiumPaymentClick('subscription_screen')
+          .catchError((e) => debugPrint('Error tracking payment click: $e'));
+
+      final success = await premiumProvider.purchaseProduct(
+        package,
+        source: 'subscription_screen',
+      );
+
+      if (!context.mounted) return;
+
+      if (success) {
+        // Mostrar éxito
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('¡Bienvenido a Premium!'),
+            content: const Text(
+              'Tu suscripción se ha activado correctamente. ¡Disfruta de todas las funciones premium!',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context); // Cerrar diálogo
+                  Navigator.pop(context); // Volver a pantalla anterior
+                },
+                child: const Text('Continuar'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // Mostrar error
+        _showErrorDialog(
+            context, 'No se pudo completar la compra. Inténtalo de nuevo.');
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      _showErrorDialog(context, 'Error inesperado: $e');
+    }
+  }
+
+  Future<void> _restorePurchases(
+    BuildContext context,
+    PremiumProvider premiumProvider,
+  ) async {
+    try {
+      final success = await premiumProvider.restorePurchases();
+
+      if (!context.mounted) return;
+
+      if (success) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('¡Compras restauradas!'),
+            content: const Text(
+                'Tu suscripción premium se ha restaurado correctamente.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Continuar'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        _showErrorDialog(context, 'No se encontraron compras anteriores.');
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      _showErrorDialog(context, 'Error restaurando compras: $e');
+    }
+  }
+
+  void _showErrorDialog(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Error'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
           ),
         ],
       ),

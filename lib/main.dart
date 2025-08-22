@@ -11,6 +11,7 @@ import 'config/app_colors.dart';
 import 'services/navigation_service.dart';
 import 'services/analytics_service.dart';
 import 'services/navigation_observer.dart';
+import 'providers/premium_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/auth/verify_email_screen.dart';
@@ -21,6 +22,7 @@ import 'screens/guides/my_guides_screen.dart';
 import 'screens/guides/guide_detail_screen.dart';
 import 'screens/onboarding/interactive_onboarding_screen.dart';
 import 'screens/main/app_wrapper.dart';
+import 'package:provider/provider.dart';
 // import 'utils/onboarding_debug.dart'; // Para testing del onboarding
 import 'package:app_links/app_links.dart';
 import 'dart:async';
@@ -47,6 +49,20 @@ void main() async {
 
     // Inicializar servicio de analytics
     await AnalyticsService.initialize();
+
+    // Inicializar RevenueCat
+    final premiumProvider = PremiumProvider();
+    final revenueCatApiKey = dotenv.env['REVENUECAT_API_KEY'];
+    if (revenueCatApiKey != null && revenueCatApiKey.isNotEmpty) {
+      try {
+        await premiumProvider.initializeRevenueCat(apiKey: revenueCatApiKey);
+        debugPrint('✅ RevenueCat inicializado correctamente');
+      } catch (e) {
+        debugPrint('❌ Error inicializando RevenueCat: $e');
+      }
+    } else {
+      debugPrint('⚠️ REVENUECAT_API_KEY no encontrado en variables de entorno');
+    }
 
     // 🚀 DESARROLLO: Reseteo de onboarding deshabilitado para no forzar flujos
     // await devResetOnboarding();
@@ -235,93 +251,97 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Tourify',
-      debugShowCheckedModeBanner: false,
-      navigatorKey: NavigationService.navigatorKey,
-      navigatorObservers: [
-        AnalyticsNavigatorObserver(), // Tracking automático de navegación
-        // ClarityNavigatorObserver eliminado: ahora AnalyticsService maneja screen names
-        if (AnalyticsService.observer != null)
-          AnalyticsService.observer!, // Firebase Analytics observer
-      ],
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.primary,
-          brightness: Brightness.light,
+    return ChangeNotifierProvider(
+      create: (context) => PremiumProvider(),
+      child: MaterialApp(
+        title: 'Tourify',
+        debugShowCheckedModeBanner: false,
+        navigatorKey: NavigationService.navigatorKey,
+        navigatorObservers: [
+          AnalyticsNavigatorObserver(), // Tracking automático de navegación
+          // ClarityNavigatorObserver eliminado: ahora AnalyticsService maneja screen names
+          if (AnalyticsService.observer != null)
+            AnalyticsService.observer!, // Firebase Analytics observer
+        ],
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: AppColors.primary,
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+          appBarTheme: const AppBarTheme(
+            centerTitle: true,
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+            foregroundColor: Colors.black87,
+            surfaceTintColor: Colors.transparent,
+            systemOverlayStyle: SystemUiOverlayStyle.dark,
+          ),
+          // Configurar transiciones personalizadas para eliminar el slide
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: {
+              TargetPlatform.android: NoTransitionPageTransitionsBuilder(),
+              TargetPlatform.iOS: NoTransitionPageTransitionsBuilder(),
+              TargetPlatform.macOS: NoTransitionPageTransitionsBuilder(),
+              TargetPlatform.windows: NoTransitionPageTransitionsBuilder(),
+              TargetPlatform.linux: NoTransitionPageTransitionsBuilder(),
+            },
+          ),
         ),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          foregroundColor: Colors.black87,
-          surfaceTintColor: Colors.transparent,
-          systemOverlayStyle: SystemUiOverlayStyle.dark,
-        ),
-        // Configurar transiciones personalizadas para eliminar el slide
-        pageTransitionsTheme: const PageTransitionsTheme(
-          builders: {
-            TargetPlatform.android: NoTransitionPageTransitionsBuilder(),
-            TargetPlatform.iOS: NoTransitionPageTransitionsBuilder(),
-            TargetPlatform.macOS: NoTransitionPageTransitionsBuilder(),
-            TargetPlatform.windows: NoTransitionPageTransitionsBuilder(),
-            TargetPlatform.linux: NoTransitionPageTransitionsBuilder(),
-          },
-        ),
-      ),
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [Locale('es', 'ES')],
-      home: const AppWrapper(),
-      onGenerateRoute: (settings) {
-        // Configurar rutas con transiciones personalizadas
-        Widget page;
-        switch (settings.name) {
-          case '/login':
-            page = const LoginScreen();
-            break;
-          case '/register':
-            page = const RegisterScreen();
-            break;
-          case '/verify-email':
-            page = const VerifyEmailScreen();
-            break;
-          case '/forgot-password':
-            page = const ForgotPasswordScreen();
-            break;
-          case '/onboarding':
-            page = const InteractiveOnboardingScreen();
-            break;
-          case '/home':
-            page = const HomeScreen();
-            break;
-          case '/profile':
-            page = const ProfileScreen();
-            break;
-          case '/my-guides':
-            page = const MyGuidesScreen();
-            break;
-          case '/guide-detail':
-            final args = settings.arguments as Map<String, dynamic>?;
-            final guideId = args?['guideId'] ?? '';
-            final guideTitle = args?['guideTitle'] ?? 'Guía';
-            page = GuideDetailScreen(guideId: guideId, guideTitle: guideTitle);
-            break;
-          default:
-            page = const HomeScreen();
-        }
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [Locale('es', 'ES')],
+        home: const AppWrapper(),
+        onGenerateRoute: (settings) {
+          // Configurar rutas con transiciones personalizadas
+          Widget page;
+          switch (settings.name) {
+            case '/login':
+              page = const LoginScreen();
+              break;
+            case '/register':
+              page = const RegisterScreen();
+              break;
+            case '/verify-email':
+              page = const VerifyEmailScreen();
+              break;
+            case '/forgot-password':
+              page = const ForgotPasswordScreen();
+              break;
+            case '/onboarding':
+              page = const InteractiveOnboardingScreen();
+              break;
+            case '/home':
+              page = const HomeScreen();
+              break;
+            case '/profile':
+              page = const ProfileScreen();
+              break;
+            case '/my-guides':
+              page = const MyGuidesScreen();
+              break;
+            case '/guide-detail':
+              final args = settings.arguments as Map<String, dynamic>?;
+              final guideId = args?['guideId'] ?? '';
+              final guideTitle = args?['guideTitle'] ?? 'Guía';
+              page =
+                  GuideDetailScreen(guideId: guideId, guideTitle: guideTitle);
+              break;
+            default:
+              page = const HomeScreen();
+          }
 
-        return PageRouteBuilder(
-          settings: settings,
-          pageBuilder: (context, animation, secondaryAnimation) => page,
-          transitionDuration: Duration.zero,
-          reverseTransitionDuration: Duration.zero,
-        );
-      },
+          return PageRouteBuilder(
+            settings: settings,
+            pageBuilder: (context, animation, secondaryAnimation) => page,
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          );
+        },
+      ),
     );
   }
 }

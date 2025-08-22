@@ -201,6 +201,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.1"
+  equatable:
+    dependency: transitive
+    description:
+      name: equatable
+      sha256: "567c64b3cb4cf82397aac55f4f0cbd3ca20d77c6c03bedbc4ceaddc08904aef7"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.7"
   fake_async:
     dependency: transitive
     description:
@@ -981,6 +989,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.1.5"
+  purchases_flutter:
+    dependency: "direct main"
+    description:
+      name: purchases_flutter
+      sha256: "239aae77964d4e6da88f1b870259df7c1325dcad7187d257a024b885d85534eb"
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.2.1"
+  purchases_ui_flutter:
+    dependency: "direct main"
+    description:
+      name: purchases_ui_flutter
+      sha256: "350b4b74c0bc8da8de8d25e3a03fb9f6ace3a2796ef90e6b136620cc5bbb140c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "9.2.1"
   rxdart:
     dependency: transitive
     description:
