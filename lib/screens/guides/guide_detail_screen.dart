@@ -97,7 +97,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   Map<String, dynamic>? _guide;
   String? _error;
   bool _isMenuExpanded = false;
-  Set<String> _expandedActivities = Set<String>();
 
   // Autenticación y control de navegación
   bool _isAuthenticated = false;
@@ -117,7 +116,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   String? _userRole;
 
   // Variables para el gesto de swipe
-  double _swipeStartX = 0.0;
   bool _isSwipeActive = false;
 
   // Variables para el mapa integrado
@@ -134,7 +132,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   // Vista previa: reactivada sin mostrar badge ni CTA
   bool _isPreview = false;
   String? _previewToken;
-  int? _previewErrorCode;
 
   // Estilo gris para las carreteras del mapa
   final String _greyRoadsMapStyle = '''
@@ -147,9 +144,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     {"featureType": "road","elementType": "labels.text.stroke","stylers": [{"color": "#ffffff"},{"weight": 2}]}
   ]
   ''';
-
-  // NUEVO: Para saber qué marcador está seleccionado
-  MarkerId? _selectedMarkerId;
 
   // Guardar el mapping de actividad a MarkerId y su posición
   Map<String, LatLng> _activityIdToLatLng = {};
@@ -219,7 +213,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
         _error = null;
         _canEdit = false;
         _isOwner = false;
-        _previewErrorCode = null;
       });
 
       // DEBUG: modo mock sin backend (token = "debug" o "mock")
@@ -326,7 +319,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       } else if (response.statusCode == 404 || response.statusCode == 410) {
         setState(() {
           _isLoading = false;
-          _previewErrorCode = response.statusCode;
           _error = response.statusCode == 404
               ? 'El enlace ya no es válido'
               : 'El enlace ha expirado';
@@ -334,7 +326,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       } else {
         setState(() {
           _isLoading = false;
-          _previewErrorCode = response.statusCode;
           _error = 'Error cargando la guía (${response.statusCode})';
         });
       }
@@ -513,14 +504,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   }
 
   /// Comprueba si es una guía de invitado mediante los argumentos de la ruta
-  Future<bool> _checkIfGuestMode() async {
-    final routeArgs = ModalRoute.of(context)?.settings.arguments;
-    if (routeArgs is Map<String, dynamic> &&
-        routeArgs.containsKey('guestConfig')) {
-      return true;
-    }
-    return false;
-  }
 
   /// Crea una guía de invitado temporal y comienza la generación de actividades
   Future<void> _createGuestGuide() async {
@@ -833,13 +816,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     }
   }
 
-  Future<void> _saveChanges() async {
-    // TODO: Implementar guardado de cambios
-    setState(() {
-      _isEditMode = false;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     // Verificar si arguments es null antes del cast
@@ -942,21 +918,25 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                             : _isMapVisible
                                 ? _buildMapAndGuideLayout(
                                     key: const ValueKey('map'))
-                                : SingleChildScrollView(
+                                : Stack(
                                     key: const ValueKey('guide'),
-                                    controller: _guideScrollController,
-                                    padding: const EdgeInsets.all(8),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        // Espacio para banner eliminado
-                                        _buildGuideHeader(),
-                                        const SizedBox(height: 16),
-                                        _buildDaysSection(),
-                                        const SizedBox(height: 100),
-                                      ],
-                                    ),
+                                    children: [
+                                      SingleChildScrollView(
+                                        controller: _guideScrollController,
+                                        padding: const EdgeInsets.all(8),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            // Espacio para banner eliminado
+                                            _buildGuideHeader(),
+                                            const SizedBox(height: 16),
+                                            _buildDaysSection(),
+                                            const SizedBox(height: 100),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                   ),
                   if (_isPreview && _previewToken != null && !_isMapVisible)
@@ -1047,15 +1027,83 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
                 ],
               ),
             ),
+            // Guest registration banner overlayed ABOVE map and dial
+            if (isGuestMode && !_isPreview)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: _canEdit ? 152 : 96,
+                child: SafeArea(
+                  top: false,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.12),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lock_open, color: Color(0xFF0062FF)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Regístrate gratis para desbloquear todos los días de tu guía',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () async {
+                            await AnalyticsService.trackEvent(
+                              'guest_banner_register_clicked',
+                              parameters: {'guide_id': widget.guideId},
+                            );
+                            Navigator.of(context).pushNamed('/onboarding');
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0062FF),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Crear cuenta',
+                            style:
+                                TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             // Tutorial overlay
             if (_showGuideTutorial)
-              GuideTutorialOverlay(
-                canEdit: _canEdit,
-                onTutorialCompleted: () {
-                  setState(() {
-                    _showGuideTutorial = false;
-                  });
-                },
+              Positioned.fill(
+                child: GuideTutorialOverlay(
+                  canEdit: _canEdit,
+                  onTutorialCompleted: () {
+                    setState(() {
+                      _showGuideTutorial = false;
+                    });
+                  },
+                ),
               ),
           ],
         ),
@@ -1441,7 +1489,7 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       onAddActivity: _addNewActivity,
       onOrganizeActivities: _showOrganizeModal,
       onOpenAgent: _openTravelAgent,
-      onOpenTickets: null,
+      onOpenTickets: _openTicketsModal,
     );
   }
 
@@ -2335,29 +2383,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
     );
   }
 
-  void _toggleEditMode() {
-    setState(() {
-      _isEditMode = !_isEditMode;
-      // Cuando activamos el modo edición, colapsamos el menú
-      if (_isEditMode) {
-        _isMenuExpanded = false;
-      }
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            _isEditMode ? 'Modo edición activado' : 'Modo edición desactivado'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-
-    // Tracking: alternar modo edición
-    AnalyticsService.trackEvent('edit_mode_toggled', parameters: {
-      'enabled': _isEditMode,
-      'guide_id': widget.guideId,
-    });
-  }
-
   void _toggleMenu() {
     setState(() {
       _isMenuExpanded = !_isMenuExpanded;
@@ -2375,12 +2400,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   }
 
   // Métodos para manejar el gesto de swipe desde la izquierda
-  void _handleSwipeFromLeft(details) {
-    if (!_isSwipeActive && details.globalPosition.dx < 50) {
-      _isSwipeActive = true;
-      _swipeStartX = details.globalPosition.dx;
-    }
-  }
 
   void _handleSwipeEnd(details) {
     if (_isSwipeActive) {
@@ -2393,7 +2412,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
       }
 
       _isSwipeActive = false;
-      _swipeStartX = 0.0;
     }
   }
 
@@ -2405,172 +2423,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   }
 
   // Método para construir imagen placeholder con fallback local
-  Widget _buildPlaceholderImage(String category) {
-    return Container(
-      width: double.infinity,
-      height: 120,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: _getCategoryColors(category),
-        ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            _getCategoryIcon(category),
-            color: Colors.white,
-            size: 40,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _getCategoryName(category),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Obtener colores por categoría
-  List<Color> _getCategoryColors(String category) {
-    switch (category.toLowerCase()) {
-      case 'cultural':
-      case 'museum':
-      case 'monument':
-        return [Colors.purple[400]!, Colors.purple[600]!];
-      case 'food':
-      case 'restaurant':
-      case 'comida':
-        return [Colors.orange[400]!, Colors.red[600]!];
-      case 'nightlife':
-      case 'fiesta':
-      case 'bar':
-        return [Colors.deepPurple[400]!, Colors.indigo[600]!];
-      case 'tour':
-      case 'sightseeing':
-        return [Colors.green[400]!, Colors.teal[600]!];
-      case 'shopping':
-        return [Colors.pink[400]!, Colors.pink[600]!];
-      case 'outdoor':
-      case 'nature':
-        return [Colors.green[400]!, Colors.green[700]!];
-      default:
-        return [Colors.blue[400]!, Colors.blue[600]!];
-    }
-  }
-
-  // Obtener icono por categoría
-  IconData _getCategoryIcon(String category) {
-    switch (category.toLowerCase()) {
-      case 'cultural':
-      case 'museum':
-      case 'monument':
-        return Icons.museum;
-      case 'food':
-      case 'restaurant':
-      case 'comida':
-        return Icons.restaurant;
-      case 'nightlife':
-      case 'fiesta':
-      case 'bar':
-        return Icons.nightlife;
-      case 'tour':
-      case 'sightseeing':
-        return Icons.tour;
-      case 'shopping':
-        return Icons.shopping_bag;
-      case 'outdoor':
-      case 'nature':
-        return Icons.nature;
-      default:
-        return Icons.place;
-    }
-  }
-
-  // Obtener nombre de categoría
-  String _getCategoryName(String category) {
-    switch (category.toLowerCase()) {
-      case 'cultural':
-      case 'museum':
-      case 'monument':
-        return 'Cultural';
-      case 'food':
-      case 'restaurant':
-      case 'comida':
-        return 'Gastronomía';
-      case 'nightlife':
-      case 'fiesta':
-      case 'bar':
-        return 'Vida Nocturna';
-      case 'tour':
-      case 'sightseeing':
-        return 'Tour';
-      case 'shopping':
-        return 'Compras';
-      case 'outdoor':
-      case 'nature':
-        return 'Naturaleza';
-      default:
-        return 'Actividad';
-    }
-  }
-
-  // Método para obtener imagen placeholder basada en la categoría
-  String _getPlaceholderImage(String category) {
-    switch (category.toLowerCase()) {
-      case 'cultural':
-      case 'museum':
-      case 'monument':
-        return 'https://images.unsplash.com/photo-1529260830199-42c24126f198?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1476&q=80';
-      case 'food':
-      case 'restaurant':
-      case 'comida':
-        return 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1287&q=80';
-      case 'nightlife':
-      case 'fiesta':
-      case 'bar':
-        return 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1374&q=80';
-      case 'tour':
-      case 'sightseeing':
-        return 'https://images.unsplash.com/photo-1539650116574-75c0c6d73d0e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80';
-      case 'shopping':
-        return 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80';
-      case 'outdoor':
-      case 'nature':
-        return 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80';
-      default:
-        return 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1470&q=80';
-    }
-  }
-
-  Future<void> _publishGuide() async {
-    try {
-      await _firestore.collection('guides').doc(widget.guideId).update({
-        'status': 'published',
-        'isPublic': true,
-      });
-      await _loadGuideDetails();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Guía publicada correctamente')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al publicar la guía: $e')),
-        );
-      }
-    }
-  }
 
   void _openTravelAgent() {
     // Tracking: abre agente IA
@@ -3180,7 +3032,6 @@ class _GuideDetailScreenState extends State<GuideDetailScreen> {
   void _onMarkerTapped(Activity activity, String city, MarkerId markerId,
       {int? pinNumber}) async {
     setState(() {
-      _selectedMarkerId = markerId;
       _selectedActivityId = activity.id;
     });
 

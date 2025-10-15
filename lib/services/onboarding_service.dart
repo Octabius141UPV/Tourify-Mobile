@@ -1,4 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OnboardingService {
   static const String _onboardingKey = 'has_completed_onboarding';
@@ -15,7 +17,33 @@ class OnboardingService {
       final version = prefs.getInt(_onboardingVersionKey) ?? 0;
 
       // Si la versión del onboarding es diferente, mostrar onboarding nuevamente
-      return hasCompleted && version >= _currentOnboardingVersion;
+      if (hasCompleted && version >= _currentOnboardingVersion) {
+        return true;
+      }
+
+      // Fallback/Sync con Firestore: si el usuario está autenticado y en
+      // su documento figura que ya completó el onboarding, respetarlo y
+      // sincronizar el flag local para no volver a pedirlo en este dispositivo.
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        try {
+          final snap =
+              await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+          if (snap.exists) {
+            final data = snap.data() as Map<String, dynamic>?;
+            final remoteCompleted = (data?['hasCompletedOnboarding'] as bool?) ?? false;
+            if (remoteCompleted) {
+              await prefs.setBool(_onboardingKey, true);
+              await prefs.setInt(_onboardingVersionKey, _currentOnboardingVersion);
+              return true;
+            }
+          }
+        } catch (_) {
+          // Silencioso: si falla la red, mantener el comportamiento previo
+        }
+      }
+
+      return false;
     } catch (e) {
       print('Error checking onboarding status: $e');
       return false;
@@ -29,6 +57,19 @@ class OnboardingService {
       await prefs.setBool(_onboardingKey, true);
       await prefs.setInt(_onboardingVersionKey, _currentOnboardingVersion);
       print('Onboarding marcado como completado');
+
+      // También reflejar en Firestore si el usuario está autenticado
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .set({'hasCompletedOnboarding': true}, SetOptions(merge: true));
+        } catch (e) {
+          print('Error actualizando flag remoto de onboarding: $e');
+        }
+      }
     } catch (e) {
       print('Error marking onboarding as completed: $e');
     }

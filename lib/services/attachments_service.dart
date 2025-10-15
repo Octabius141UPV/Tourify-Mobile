@@ -4,6 +4,7 @@ import 'package:mime/mime.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:tourify_flutter/config/debug_config.dart';
 
 class Attachment {
   final String id;
@@ -368,6 +369,7 @@ class AttachmentsService {
     int? dayNumber,
     String? assignedTo,
     bool onlyMineIfViewer = true,
+    bool? useServerFiltering,
   }) {
     final user = _auth.currentUser;
     if (user == null) {
@@ -375,26 +377,63 @@ class AttachmentsService {
       return const Stream<List<Attachment>>.empty();
     }
 
-    Query<Map<String, dynamic>> q =
-        _attachmentsCol(guideId).orderBy('createdAt', descending: true);
+    final serverFiltering =
+        useServerFiltering ?? DebugConfig.enableServerSideAttachmentFilters;
 
-    if (relatedActivityId != null) {
-      q = q.where('relatedActivityId', isEqualTo: relatedActivityId);
+    if (serverFiltering) {
+      // Filtrado en servidor (requiere índices compuestos). En modo viewer
+      // evitamos filtrar por assignedTo en servidor para preservar los
+      // adjuntos creados por el usuario (OR no soportado en Firestore).
+      Query<Map<String, dynamic>> q = _attachmentsCol(guideId);
+
+      if (relatedActivityId != null) {
+        q = q.where('relatedActivityId', isEqualTo: relatedActivityId);
+      }
+      if (dayNumber != null) {
+        q = q.where('dayNumber', isEqualTo: dayNumber);
+      }
+      if (assignedTo != null && !onlyMineIfViewer) {
+        q = q.where('assignedTo', isEqualTo: assignedTo);
+      }
+
+      q = q.orderBy('createdAt', descending: true);
+
+      return q.snapshots().map((snap) {
+        var list = snap.docs.map((d) => Attachment.fromMap(d.data())).toList();
+        if (onlyMineIfViewer) {
+          list = list
+              .where(
+                  (a) => a.assignedTo == user.uid || a.createdBy == user.uid)
+              .toList();
+        }
+        return list;
+      });
     }
-    if (dayNumber != null) {
-      q = q.where('dayNumber', isEqualTo: dayNumber);
-    }
-    if (assignedTo != null) {
-      q = q.where('assignedTo', isEqualTo: assignedTo);
-    }
+
+    // Filtrado en cliente (no requiere índices compuestos)
+    final q = _attachmentsCol(guideId).orderBy('createdAt', descending: true);
 
     return q.snapshots().map((snap) {
-      final list = snap.docs.map((d) => Attachment.fromMap(d.data())).toList();
-      if (!onlyMineIfViewer) return list;
-      // En cliente, por seguridad adicional: si no es editor/owner, filtra por el uid
-      return list
-          .where((a) => a.assignedTo == user.uid || a.createdBy == user.uid)
-          .toList();
+      var list = snap.docs.map((d) => Attachment.fromMap(d.data())).toList();
+
+      if (relatedActivityId != null) {
+        list = list
+            .where((a) => a.relatedActivityId == relatedActivityId)
+            .toList();
+      }
+      if (dayNumber != null) {
+        list = list.where((a) => a.dayNumber == dayNumber).toList();
+      }
+      if (assignedTo != null) {
+        list = list.where((a) => a.assignedTo == assignedTo).toList();
+      }
+
+      if (onlyMineIfViewer) {
+        list = list
+            .where((a) => a.assignedTo == user.uid || a.createdBy == user.uid)
+            .toList();
+      }
+      return list;
     });
   }
 
