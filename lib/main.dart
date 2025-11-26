@@ -27,6 +27,7 @@ import 'dart:async';
 import 'package:flutter/rendering.dart';
 import 'services/auth_service.dart'; // Added import for AuthService
 import 'package:firebase_auth/firebase_auth.dart';
+import 'config/debug_config.dart';
 
 void main() async {
   try {
@@ -47,6 +48,38 @@ void main() async {
 
     // Inicializar servicio de analytics
     await AnalyticsService.initialize();
+
+    // Debug: mostrar estado de autenticación antes de posibles acciones
+    if (DebugConfig.shouldLogAuthStatusOnStart()) {
+      final u = FirebaseAuth.instance.currentUser;
+      debugPrint('AUTH ▶ autenticado: ${u != null}');
+      debugPrint('AUTH ▶ uid: ${u?.uid}');
+      debugPrint('AUTH ▶ email: ${u?.email}');
+      debugPrint('AUTH ▶ phone: ${u?.phoneNumber}');
+      final providers = u?.providerData.map((p) => p.providerId).join(', ');
+      debugPrint('AUTH ▶ providers: ${providers ?? '-'}');
+    }
+
+    // Si el usuario fue borrado/disable en servidor, invalidar sesión local
+    try {
+      final u = FirebaseAuth.instance.currentUser;
+      if (u != null) {
+        await u.reload();
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found' ||
+          e.code == 'user-disabled' ||
+          e.code == 'invalid-user-token') {
+        await AuthService.signOutAndClearRememberMe();
+        debugPrint('AUTH ▶ Sesión invalidada (usuario borrado/disabled)');
+      }
+    } catch (_) {}
+
+    // Debug: forzar cerrar sesión al arrancar si está habilitado
+    if (DebugConfig.shouldForceSignOutOnStart()) {
+      await AuthService.signOutAndClearRememberMe();
+      debugPrint('AUTH ▶ Sesión forzada a cerrar al iniciar (debug)');
+    }
 
     // 🚀 DESARROLLO: Reseteo de onboarding deshabilitado para no forzar flujos
     // await devResetOnboarding();

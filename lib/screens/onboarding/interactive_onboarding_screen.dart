@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -15,10 +16,12 @@ import 'package:tourify_flutter/services/guest_guide_service.dart';
 import 'package:tourify_flutter/services/guide_service.dart';
 import 'package:tourify_flutter/services/user_service.dart';
 import 'package:tourify_flutter/services/onboarding_service.dart';
+import 'package:tourify_flutter/services/local_user_prefs.dart';
 import 'package:tourify_flutter/screens/main/home_screen.dart';
 import 'package:tourify_flutter/services/navigation_service.dart';
 import 'package:tourify_flutter/screens/auth/login_screen.dart';
 import 'package:tourify_flutter/data/mock_activities.dart';
+import 'package:tourify_flutter/config/debug_config.dart';
 
 class InteractiveOnboardingScreen extends StatefulWidget {
   const InteractiveOnboardingScreen({super.key});
@@ -44,7 +47,8 @@ class _InteractiveOnboardingScreenState
   // Datos del usuario
   String _userName = '';
   String _userPhone = '';
-  int _userAge = 0;
+  int _userAge = 25;
+  FixedExtentScrollController? _ageController;
   int _citiesGoal = 0;
 
   // Variables de registro
@@ -109,6 +113,9 @@ class _InteractiveOnboardingScreenState
     _checkBiometricAvailability();
     _checkUserExistence();
 
+    // Controlador para selector de edad, con selección inicial
+    _ageController = FixedExtentScrollController(initialItem: _userAge - 13);
+
     // Detectar si venimos de deeplink (hay pendingJoin)
     _isDeepLinkOnboarding = NavigationService.hasPendingJoin;
     if (_isDeepLinkOnboarding) {
@@ -143,9 +150,50 @@ class _InteractiveOnboardingScreenState
   Future<void> _checkUserExistence() async {
     try {
       final currentUser = AuthService.currentUser;
-      setState(() {
-        _showRegistrationOptions = currentUser == null;
-      });
+      if (currentUser == null) {
+        setState(() {
+          _showRegistrationOptions = true;
+          // no auth → sin nombre
+          _userName = '';
+        });
+        return;
+      }
+
+      // Autenticado: precargar nombre desde caché local (instantáneo)
+      String? cachedName = await LocalUserPrefs.getDisplayName();
+      if (cachedName != null && cachedName.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _showRegistrationOptions = false;
+            _userName = cachedName!;
+          });
+        }
+      } else {
+        // Fallback inmediato a FirebaseAuth o email
+        final immediate = currentUser.displayName ??
+            (currentUser.email?.split('@').first ?? 'Usuario');
+        if (mounted) {
+          setState(() {
+            _showRegistrationOptions = false;
+            _userName = immediate;
+          });
+        }
+      }
+
+      // Luego intenta refrescar desde Firestore en segundo plano y cachear
+      try {
+        final data = await UserService.getUserData(currentUser.uid);
+        final remoteName = (data?['name'] as String?) ??
+            (data?['displayName'] as String?) ?? _userName;
+        if (remoteName.isNotEmpty) {
+          await LocalUserPrefs.saveBasicProfile(displayName: remoteName);
+          if (mounted) {
+            setState(() {
+              _userName = remoteName;
+            });
+          }
+        }
+      } catch (_) {}
     } catch (e) {
       setState(() {
         _showRegistrationOptions = true;
@@ -177,12 +225,35 @@ class _InteractiveOnboardingScreenState
       });
       await _animationController.forward();
 
-      // Intentar enviar SMS
-      await Future.delayed(const Duration(milliseconds: 500));
-      await _sendSmsVerification();
+      // Intentar enviar SMS solo si NO estamos en bypass (simulador/debug)
+      if (!_shouldBypassSMS()) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _sendSmsVerification();
+      }
     } else if (_currentStep == 1) {
-      // VERIFICAR EL PIN SMS CORRECTAMENTE
+      // VERIFICAR EL PIN SMS CORRECTAMENTE (O HACER BYPASS)
       print('🎯 BOTÓN CONTINUAR presionado en paso SMS con código: $_smsCode');
+
+      // 🔧 BYPASS PARA SIMULADOR/DEBUG
+      if (_shouldBypassSMS()) {
+        DebugConfig.debugPrint(
+            'BYPASS SMS ACTIVADO - Saltando verificación para simulador/debug');
+        setState(() {
+          _secondFactorEnrolled = true;
+          _phoneVerificationError = null;
+          _currentStep = 2;
+        });
+        await _animationController.forward();
+        // Importante: permitir siguientes interacciones
+        if (mounted) {
+          setState(() {
+            _isAnimating = false;
+          });
+        } else {
+          _isAnimating = false;
+        }
+        return;
+      }
 
       if (_smsCode.length != 6) {
         print('❌ Código muy corto: ${_smsCode.length} dígitos');
@@ -282,10 +353,18 @@ class _InteractiveOnboardingScreenState
   bool _validateCurrentStep() {
     switch (_currentStep) {
       case 0: // Registro + teléfono
+        // En bypass (simulador/debug), permitir avanzar solo con estar autenticado
+        if (_shouldBypassSMS()) {
+          return AuthService.isAuthenticated;
+        }
         return AuthService.isAuthenticated &&
             _userPhone.isNotEmpty &&
             _isValidPhoneNumber(_userPhone);
       case 1: // Verificación SMS
+        // En bypass (simulador/debug), permitir continuar directamente
+        if (_shouldBypassSMS()) {
+          return true;
+        }
         return _secondFactorEnrolled ||
             (_smsCode.length == 6 &&
                 _verificationId != null &&
@@ -303,6 +382,12 @@ class _InteractiveOnboardingScreenState
       default:
         return true;
     }
+  }
+
+  /// 🔧 Determina si se debe hacer bypass del SMS
+  /// Para simulador o modo debug
+  bool _shouldBypassSMS() {
+    return DebugConfig.shouldBypassSMS();
   }
 
   bool _isValidPhoneNumber(String phone) {
@@ -446,6 +531,9 @@ class _InteractiveOnboardingScreenState
     _pageController.dispose();
     _animationController.dispose();
     _buttonAnimationController.dispose();
+    try {
+      _ageController?.dispose();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -1223,6 +1311,9 @@ class _InteractiveOnboardingScreenState
                     SizedBox(
                       height: 200,
                       child: ListWheelScrollView(
+                        controller: _ageController ??=
+                            FixedExtentScrollController(
+                                initialItem: (_userAge - 13).clamp(0, 87)),
                         itemExtent: 50,
                         diameterRatio: 1.5,
                         physics: const FixedExtentScrollPhysics(),
@@ -1538,9 +1629,11 @@ class _InteractiveOnboardingScreenState
           const SizedBox(height: 24),
 
           Text(
-            _verificationId != null
-                ? 'Verifica tu móvil 📱'
-                : '⏳ Enviando código SMS...',
+            _shouldBypassSMS()
+                ? '🔧 Modo Desarrollo (SMS desactivado)'
+                : _verificationId != null
+                    ? 'Verifica tu móvil 📱'
+                    : '⏳ Enviando código SMS...',
             style: const TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -1552,9 +1645,11 @@ class _InteractiveOnboardingScreenState
           const SizedBox(height: 12),
 
           Text(
-            _verificationId != null
-                ? 'Código enviado a ${_formatPhoneWithPrefix(_userPhone)}'
-                : 'Enviando código a ${_formatPhoneWithPrefix(_userPhone)}...',
+            _shouldBypassSMS()
+                ? 'SMS desactivado para simulador - Pulsa "Omitir ahora"'
+                : _verificationId != null
+                    ? 'Código enviado a ${_formatPhoneWithPrefix(_userPhone)}'
+                    : 'Enviando código a ${_formatPhoneWithPrefix(_userPhone)}...',
             style: const TextStyle(
               fontSize: 16,
               color: Colors.white70,
@@ -1564,65 +1659,124 @@ class _InteractiveOnboardingScreenState
 
           const SizedBox(height: 30),
 
-          // Campo para ingresar el código SMS
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 10,
-                  offset: const Offset(0, 5),
+          // Campo para ingresar el código SMS (o bypass info)
+          if (_shouldBypassSMS())
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+                border:
+                    Border.all(color: Colors.orange.withOpacity(0.5), width: 2),
+              ),
+              child: const Column(
+                children: [
+                  Icon(Icons.developer_mode, color: Colors.orange, size: 48),
+                  SizedBox(height: 12),
+                  Text(
+                    '🔧 MODO DESARROLLO',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'SMS desactivado para simulador\nPulsa "Omitir ahora" para avanzar',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white70,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: TextField(
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 8,
                 ),
-              ],
-            ),
-            child: TextField(
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 8,
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  hintText: '123456',
+                  hintStyle: TextStyle(color: Colors.grey),
+                  contentPadding: EdgeInsets.all(16),
+                  counterText: '',
+                ),
+                onChanged: (value) {
+                  setState(() {
+                    _smsCode = value;
+                  });
+                },
               ),
-              decoration: const InputDecoration(
-                border: InputBorder.none,
-                hintText: '123456',
-                hintStyle: TextStyle(color: Colors.grey),
-                contentPadding: EdgeInsets.all(16),
-                counterText: '',
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _smsCode = value;
-                });
-              },
             ),
-          ),
 
           const SizedBox(height: 16),
 
-          // Botón para reenviar código
-          TextButton(
-            onPressed: !_isVerifyingPhone
-                ? () async {
-                    await _sendSmsVerification();
-                  }
-                : null,
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white.withOpacity(0.8),
-            ),
-            child: const Text(
-              'Reenviar código',
-              style: TextStyle(
-                fontSize: 14,
-                decoration: TextDecoration.underline,
+          // Botón para reenviar código (oculto en modo bypass)
+          if (!_shouldBypassSMS())
+            TextButton(
+              onPressed: !_isVerifyingPhone
+                  ? () async {
+                      await _sendSmsVerification();
+                    }
+                  : null,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white.withOpacity(0.8),
+              ),
+              child: const Text(
+                'Reenviar código',
+                style: TextStyle(
+                  fontSize: 14,
+                  decoration: TextDecoration.underline,
+                ),
               ),
             ),
-          ),
 
           const SizedBox(height: 8),
+
+          // Enlace "Omitir ahora" visible solo en modo bypass (simulador/debug)
+          if (_shouldBypassSMS())
+            TextButton(
+              onPressed: () async {
+                DebugConfig.debugPrint(
+                    'BYPASS SMS ACTIVADO - Omitiendo verificación (enlace)');
+                setState(() {
+                  _secondFactorEnrolled = true;
+                  _phoneVerificationError = null;
+                  _currentStep = 2;
+                });
+                await _animationController.forward();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+              ),
+              child: const Text(
+                'Omitir ahora',
+                style: TextStyle(
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
 
           if (_phoneVerificationError != null) ...[
             const SizedBox(height: 16),
@@ -2575,11 +2729,18 @@ class _InteractiveOnboardingScreenState
             additionalData: userPreferences);
       }
 
-      setState(() {
-        _userName = user.displayName ?? 'Usuario';
-        _isRegistering = false;
-        _showRegistrationOptions = false;
-      });
+      await LocalUserPrefs.saveBasicProfile(
+        displayName: user.displayName ?? 'Usuario',
+        email: user.email,
+        photoURL: user.photoURL,
+      );
+      if (mounted) {
+        setState(() {
+          _userName = user.displayName ?? 'Usuario';
+          _isRegistering = false;
+          _showRegistrationOptions = false;
+        });
+      }
 
       await _migrateTemporaryGuideToCloud(temporaryGuide);
     } catch (e) {

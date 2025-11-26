@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'analytics_service.dart';
+import 'local_user_prefs.dart';
 import 'navigation_service.dart';
 import '../config/api_config.dart';
 
@@ -584,6 +585,7 @@ class AuthService {
   static Future<void> signOutAndClearRememberMe() async {
     try {
       await clearRememberedCredentials();
+      await LocalUserPrefs.clearProfile();
       await _googleSignIn.signOut();
       // Note: Apple Sign In doesn't require explicit sign out
       // as it's handled automatically by Firebase Auth

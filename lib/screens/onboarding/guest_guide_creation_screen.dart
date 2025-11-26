@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'dart:async';
 import 'dart:convert';
-import 'package:google_places_flutter/google_places_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../../config/app_colors.dart';
@@ -240,6 +238,8 @@ class _GuestGuideCreationScreenState extends State<GuestGuideCreationScreen>
   // Para el autocompletado de Google Places
   final TextEditingController _destinationController = TextEditingController();
 
+  // CTA de registro eliminado: navegación directa como invitado
+
   @override
   void initState() {
     super.initState();
@@ -451,9 +451,8 @@ class _GuestGuideCreationScreenState extends State<GuestGuideCreationScreen>
     // Guardar en GuestGuideService para que esté disponible durante el onboarding
     await GuestGuideService.saveTemporaryGuide(temporaryGuide);
 
-    // Crear una guía temporal y navegar directamente al GuideDetailScreen
+    // Crear una guía temporal y navegar directamente al GuideDetailScreen (sin CTA de registro)
     if (mounted) {
-      // Crear un ID temporal para la guía de invitado
       final tempGuideId = 'guest_${DateTime.now().millisecondsSinceEpoch}';
       final guideTitle = 'Guía para $_destination';
 
@@ -469,7 +468,6 @@ class _GuestGuideCreationScreenState extends State<GuestGuideCreationScreen>
               'guideId': tempGuideId,
               'guideTitle': guideTitle,
               'isPublic': false,
-              // Pasar datos de configuración para que el GuideDetailScreen pueda crear la guía
               'guestConfig': temporaryGuide,
             },
           ),
@@ -827,6 +825,8 @@ class _GuestGuideCreationScreenState extends State<GuestGuideCreationScreen>
               ),
               child: _buildDestinationInput(googleMapsApiKey),
             ),
+            const SizedBox(height: 16),
+            // CTA de registro eliminado
             const SizedBox(height: 32),
           ],
         ),

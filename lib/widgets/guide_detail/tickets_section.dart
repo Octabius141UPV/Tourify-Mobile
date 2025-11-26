@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:tourify_flutter/services/attachments_service.dart';
+import 'package:tourify_flutter/services/ticket_upload_service.dart';
+import 'package:tourify_flutter/models/ticket_ui_state.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -30,14 +32,11 @@ class TicketsSection extends StatefulWidget {
 class _TicketsSectionState extends State<TicketsSection> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final AttachmentsService _attachmentsService = AttachmentsService();
+  final TicketUploadService _ticketUploadService = TicketUploadService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static const bool _ticketsAddVisible = false;
+  static const bool _ticketsAddVisible = true;
 
-  int? _selectedDay;
-  String? _assignedToFilter; // para owner/editor
-  List<_Collaborator> _collaborators = [];
-  bool _loadingCollaborators = false;
-  bool _isUploading = false;
+  TicketUIState _uiState = const TicketUIState();
 
   @override
   void initState() {
@@ -48,34 +47,75 @@ class _TicketsSectionState extends State<TicketsSection> {
   }
 
   Future<void> _loadCollaborators() async {
-    setState(() => _loadingCollaborators = true);
+    _updateUIState(_uiState.copyWith(isLoadingCollaborators: true));
+
     try {
       final user = _auth.currentUser;
       if (user == null) return;
+
       final snapshot = await _firestore
           .collection('guides')
           .doc(widget.guideId)
           .collection('collaborators')
           .get();
-      final items = <_Collaborator>[];
+
+      final collaborators = <Collaborator>[];
       // Incluir siempre al owner actual por si no está en la subcolección
-      items.add(_Collaborator(uid: user.uid, label: 'Yo'));
-      for (final d in snapshot.docs) {
-        final data = d.data();
+      collaborators.add(Collaborator(uid: user.uid, label: 'Yo'));
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
         final String? uid =
             (data['uid'] as String?) ?? (data['userId'] as String?);
         if (uid == null || uid.isEmpty) continue;
+
         final label = (data['email'] as String?) ?? uid;
-        items.add(_Collaborator(uid: uid, label: label));
+        collaborators.add(Collaborator(uid: uid, label: label));
       }
-      setState(() {
-        _collaborators = items;
-      });
+
+      _updateUIState(_uiState.copyWith(collaborators: collaborators));
     } catch (_) {
-      // Silencioso
+      // Error silencioso - podríamos agregar logging aquí
     } finally {
-      if (mounted) setState(() => _loadingCollaborators = false);
+      if (mounted) {
+        _updateUIState(_uiState.copyWith(isLoadingCollaborators: false));
+      }
     }
+  }
+
+  /// Método helper para actualizar el estado de la UI de forma consistente
+  void _updateUIState(TicketUIState newState) {
+    if (mounted) {
+      setState(() {
+        _uiState = newState;
+      });
+    }
+  }
+
+  /// Muestra un mensaje de error de forma consistente
+  void _showErrorMessage(BuildContext context, String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// Muestra un mensaje de éxito de forma consistente
+  void _showSuccessMessage(BuildContext context, String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -117,11 +157,11 @@ class _TicketsSectionState extends State<TicketsSection> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   minSize: 30,
-                  onPressed: _isUploading ? null : _showAddOptions,
+                  onPressed: _uiState.isUploading ? null : _showAddOptions,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_isUploading)
+                      if (_uiState.isUploading)
                         const Padding(
                           padding: EdgeInsets.only(right: 8.0),
                           child: CupertinoActivityIndicator(
@@ -142,7 +182,7 @@ class _TicketsSectionState extends State<TicketsSection> {
             ],
           ),
           const SizedBox(height: 8),
-          if (_loadingCollaborators && widget.canEdit)
+          if (_uiState.isLoadingCollaborators && widget.canEdit)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8.0),
               child: LinearProgressIndicator(minHeight: 2),
@@ -153,8 +193,8 @@ class _TicketsSectionState extends State<TicketsSection> {
             stream: _attachmentsService.streamByGuide(
               guideId: widget.guideId,
               relatedActivityId: widget.relatedActivityIdFilter,
-              dayNumber: _selectedDay,
-              assignedTo: widget.canEdit ? _assignedToFilter : user.uid,
+              dayNumber: _uiState.selectedDay,
+              assignedTo: widget.canEdit ? _uiState.assignedToFilter : user.uid,
               onlyMineIfViewer: !widget.canEdit,
             ),
             builder: (context, snapshot) {
@@ -217,17 +257,19 @@ class _TicketsSectionState extends State<TicketsSection> {
       children: [
         _pill(
           icon: CupertinoIcons.calendar,
-          label: _selectedDay == null ? 'Todos los días' : 'Día $_selectedDay',
+          label: _uiState.selectedDay == null
+              ? 'Todos los días'
+              : 'Día ${_uiState.selectedDay}',
           onTap: _pickDayCupertino,
         ),
         if (widget.canEdit)
           _pill(
             icon: CupertinoIcons.person_crop_circle,
-            label: _assignedToFilter == null
+            label: _uiState.assignedToFilter == null
                 ? 'Todas las personas'
-                : (_collaborators
-                    .firstWhere((c) => c.uid == _assignedToFilter,
-                        orElse: () => _Collaborator(uid: '', label: 'Persona'))
+                : (_uiState.collaborators
+                    .firstWhere((c) => c.uid == _uiState.assignedToFilter,
+                        orElse: () => Collaborator(uid: '', label: 'Persona'))
                     .label),
             onTap: _pickAssigneeCupertino,
           ),
@@ -270,14 +312,14 @@ class _TicketsSectionState extends State<TicketsSection> {
         actions: [
           CupertinoActionSheetAction(
             onPressed: () {
-              setState(() => _selectedDay = null);
+              _updateUIState(_uiState.copyWith(selectedDay: null));
               Navigator.pop(context);
             },
             child: const Text('Todos los días'),
           ),
           ...widget.days.map((d) => CupertinoActionSheetAction(
                 onPressed: () {
-                  setState(() => _selectedDay = d);
+                  _updateUIState(_uiState.copyWith(selectedDay: d));
                   Navigator.pop(context);
                 },
                 child: Text('Día $d'),
@@ -300,14 +342,14 @@ class _TicketsSectionState extends State<TicketsSection> {
         actions: [
           CupertinoActionSheetAction(
             onPressed: () {
-              setState(() => _assignedToFilter = null);
+              _updateUIState(_uiState.copyWith(assignedToFilter: null));
               Navigator.pop(context);
             },
             child: const Text('Todas las personas'),
           ),
-          ..._collaborators.map((c) => CupertinoActionSheetAction(
+          ..._uiState.collaborators.map((c) => CupertinoActionSheetAction(
                 onPressed: () {
-                  setState(() => _assignedToFilter = c.uid);
+                  _updateUIState(_uiState.copyWith(assignedToFilter: c.uid));
                   Navigator.pop(context);
                 },
                 child: Text(c.label),
@@ -323,7 +365,7 @@ class _TicketsSectionState extends State<TicketsSection> {
   }
 
   Future<void> _onAddTicketPressed() async {
-    if (_isUploading) return;
+    if (_uiState.isUploading) return;
 
     // Capturar referencias ANTES de cerrar el modal, para no usar un context desmontado
     final NavigatorState rootNav = Navigator.of(context, rootNavigator: true);
@@ -338,8 +380,8 @@ class _TicketsSectionState extends State<TicketsSection> {
       await WidgetsBinding.instance.endOfFrame;
       await Future.delayed(const Duration(milliseconds: 200));
 
-      // Seleccionar archivo desde el contexto limpio
-      final result = await FilePicker.platform.pickFiles(withData: true);
+      // Seleccionar archivo desde el contexto limpio (evitar cargar bytes grandes en memoria)
+      final result = await FilePicker.platform.pickFiles(withData: false);
       if (result == null || result.files.isEmpty) {
         await Future.delayed(const Duration(milliseconds: 200));
         reopen?.call();
@@ -347,9 +389,19 @@ class _TicketsSectionState extends State<TicketsSection> {
       }
 
       final file = result.files.first;
-      final bytes = file.bytes;
       final path = file.path;
-      if (bytes == null && (path == null || path.isEmpty)) {
+      if (path == null || path.isEmpty) {
+        await Future.delayed(const Duration(milliseconds: 200));
+        reopen?.call();
+        return;
+      }
+
+      // Validación previa
+      if (!_ticketUploadService.isValidTicketFile(file)) {
+        ScaffoldMessenger.of(rootContext).showSnackBar(
+          const SnackBar(
+              content: Text('Archivo no permitido o excede 10MB')),
+        );
         await Future.delayed(const Duration(milliseconds: 200));
         reopen?.call();
         return;
@@ -366,42 +418,21 @@ class _TicketsSectionState extends State<TicketsSection> {
       }
 
       String assignedUid = user.uid;
-      if (widget.canEdit && _collaborators.isNotEmpty) {
+      if (widget.canEdit && _uiState.collaborators.isNotEmpty) {
         // Mostrar diálogo de asignación desde el root context (sin modal abierto)
         final selected = await _askAssigneeFromRoot(rootContext, assignedUid);
         assignedUid = selected ?? user.uid;
       }
 
-      final mime = _detectMime(file);
-
-      // Subir archivo (ya sin modal interferiendo)
-      if (bytes != null) {
-        await _attachmentsService.uploadAttachment(
-          guideId: widget.guideId,
-          bytes: bytes,
-          originalName: file.name,
-          mimeType: mime,
-          title: file.name,
-          category: 'activity',
-          type: 'ticket',
-          assignedToUserId: assignedUid,
-          dayNumber: _selectedDay,
-          relatedActivityId: widget.relatedActivityIdFilter,
-        );
-      } else if (path != null && path.isNotEmpty) {
-        await _attachmentsService.uploadAttachmentFromFile(
-          guideId: widget.guideId,
-          file: File(path),
-          originalName: file.name,
-          mimeType: mime,
-          title: file.name,
-          category: 'activity',
-          type: 'ticket',
-          assignedToUserId: assignedUid,
-          dayNumber: _selectedDay,
-          relatedActivityId: widget.relatedActivityIdFilter,
-        );
-      }
+      // Subir archivo (ya sin modal interferiendo) usando el servicio dedicado
+      _updateUIState(_uiState.copyWith(isUploading: true));
+      await _ticketUploadService.uploadFileTicket(
+        guideId: widget.guideId,
+        file: file,
+        assignedUserId: assignedUid,
+        dayNumber: _uiState.selectedDay,
+        relatedActivityId: widget.relatedActivityIdFilter,
+      );
 
       // Mostrar éxito y reabrir modal
       ScaffoldMessenger.of(rootContext).showSnackBar(
@@ -420,6 +451,10 @@ class _TicketsSectionState extends State<TicketsSection> {
       );
       await Future.delayed(const Duration(milliseconds: 300));
       reopen?.call();
+    } finally {
+      if (mounted) {
+        _updateUIState(_uiState.copyWith(isUploading: false));
+      }
     }
   }
 
@@ -458,19 +493,28 @@ class _TicketsSectionState extends State<TicketsSection> {
       }
 
       String assignedUid = user.uid;
-      if (widget.canEdit && _collaborators.isNotEmpty) {
+      if (widget.canEdit && _uiState.collaborators.isNotEmpty) {
         final selected = await _askAssigneeFromRoot(rootContext, assignedUid);
         assignedUid = selected ?? user.uid;
       }
 
-      await _attachmentsService.createLinkAttachment(
+      // Validar URL
+      if (!_ticketUploadService.isValidTicketUrl(url)) {
+        ScaffoldMessenger.of(rootContext).showSnackBar(
+          const SnackBar(content: Text('URL no válida')),
+        );
+        await Future.delayed(const Duration(milliseconds: 150));
+        reopen?.call();
+        return;
+      }
+
+      _updateUIState(_uiState.copyWith(isUploading: true));
+      await _ticketUploadService.createLinkTicket(
         guideId: widget.guideId,
-        url: url.trim(),
-        title: (title ?? '').trim(),
-        category: 'activity',
-        type: 'ticket',
-        assignedToUserId: assignedUid,
-        dayNumber: _selectedDay,
+        url: url,
+        title: title,
+        assignedUserId: assignedUid,
+        dayNumber: _uiState.selectedDay,
         relatedActivityId: widget.relatedActivityIdFilter,
       );
 
@@ -485,6 +529,10 @@ class _TicketsSectionState extends State<TicketsSection> {
       );
       await Future.delayed(const Duration(milliseconds: 250));
       reopen?.call();
+    } finally {
+      if (mounted) {
+        _updateUIState(_uiState.copyWith(isUploading: false));
+      }
     }
   }
 
@@ -554,7 +602,7 @@ class _TicketsSectionState extends State<TicketsSection> {
       context: rootContext,
       builder: (context) => CupertinoActionSheet(
         title: const Text('Asignar ticket a'),
-        actions: _collaborators
+        actions: _uiState.collaborators
             .map((c) => CupertinoActionSheetAction(
                   onPressed: () => Navigator.pop(context, c.uid),
                   child: Text(c.label),
@@ -662,27 +710,4 @@ class _TicketsSectionState extends State<TicketsSection> {
   }
 }
 
-class _Collaborator {
-  final String uid;
-  final String label;
-  _Collaborator({required this.uid, required this.label});
-}
-
-String _detectMime(PlatformFile file) {
-  final ext = (file.extension ?? '').toLowerCase();
-  switch (ext) {
-    case 'pdf':
-      return 'application/pdf';
-    case 'png':
-      return 'image/png';
-    case 'jpg':
-    case 'jpeg':
-      return 'image/jpeg';
-    case 'webp':
-      return 'image/webp';
-    case 'gif':
-      return 'image/gif';
-    default:
-      return 'application/octet-stream';
-  }
-}
+// Nota: detección de MIME centralizada en TicketUploadService
