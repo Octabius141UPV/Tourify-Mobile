@@ -50,3 +50,29 @@ app.*.map.json
 
 # Environment variables
 .env
+.env.*
+
+# Firebase / Google config (mantener fuera del repo público)
+**/google-services.json
+**/GoogleService-Info.plist
+ios/firebase_app_id_file.json
+lib/firebase_options.dart
+*.xcconfig
+
+# Keys y credenciales locales
+android/key.properties
+**/*.keystore
+**/*.jks
+**/*.p8
+**/*.p12
+**/*.pem
+**/*.mobileprovision
+**/*.cer
+**/*.pfx
+fastlane/.env*
+fastlane/Appfile
+fastlane/Matchfile
+
+# Herramientas locales
+.fvm/
+coverage/
