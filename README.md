@@ -46,6 +46,7 @@ FIREBASE_AUTH_DOMAIN=xxx.firebaseapp.com
 GOOGLE_IOS_CLIENT_ID=xxx.apps.googleusercontent.com
 GOOGLE_MAPS_API_KEY=xxx
 ```
+1b) iOS: copia `ios/Runner/GoogleService-Info.plist.example` a `ios/Runner/GoogleService-Info.plist` con tus claves de Firebase/Google; añade tu `GMSApiKey` en `ios/Runner/Info.plist` (no la publiques).
 2) Instala dependencias: `flutter pub get`.
 3) Ejecuta en el dispositivo/emulador deseado:
    - `flutter run -d ios`

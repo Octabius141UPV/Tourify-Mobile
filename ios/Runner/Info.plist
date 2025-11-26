@@ -39,14 +39,14 @@
 			<string>REVERSED_CLIENT_ID</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.679229335063-1oi55c9mktqe1uk3o70e6mnoe0ovi9a9</string>
+				<string>com.googleusercontent.apps.YOUR_IOS_GOOGLE_CLIENT_ID</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>GMSApiKey</key>
-	<string>AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM</string>
+	<string>YOUR_IOS_GOOGLE_MAPS_KEY</string>
 	<key>LSApplicationCategoryType</key>
 	<string></string>
 	<key>LSRequiresIPhoneOS</key>

@@ -32,7 +32,13 @@ import FirebaseMessaging
       }
     }
     
-    GMSServices.provideAPIKey("AIzaSyAhOtZkJTa31bfL4W4BLAAG3P2wOWxyfGM")
+    if let mapsApiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String,
+       !mapsApiKey.isEmpty,
+       !mapsApiKey.lowercased().contains("your_ios_google_maps_key") {
+      GMSServices.provideAPIKey(mapsApiKey)
+    } else {
+      print("⚠️ GMSApiKey no configurada. Añade tu llave en Info.plist (no la publiques).")
+    }
     GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
